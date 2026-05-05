@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 """
-Video Frame Extractor  —  v3.1
-Nouveautés v3.1 :
-  - "Renommer les fichiers" déplacé sous le dossier de travail.
-  - Taille de fenêtre mémorisée injectée dans la liste si non standard.
-  - Mémorisation automatique de tous les réglages de capture (mode,
-    nombre, intervalle, filtres, tone mapping…) à chaque modification.
+Video Frame Extractor  —  v3.5
+Nouveautés v3.5 :
+
 Dépendances : pip install opencv-python Pillow numpy
               ffmpeg requis (brew/apt/winget install ffmpeg)
 """
@@ -631,7 +628,7 @@ def is_black_frame(arr_rgb, threshold=5):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Video Frame Extractor  —  v3.1")
+        self.title("Video Frame Extractor  —  v3.5")
         self.configure(bg=C["bg"])
         self._cfg = load_config()
         self._ffmpeg_ok = ffmpeg_available()
@@ -731,7 +728,7 @@ class App(tk.Tk):
                  fg=C["t2"],bg=C["sidebar"]).pack(side="left")
         tk.Label(hdr,text="Extractor",font=("Segoe UI Semibold",20),
                  fg=C["accent"],bg=C["sidebar"]).pack(side="left",padx=(4,0))
-        tk.Label(hdr,text=" v3.1",font=("Segoe UI",9),
+        tk.Label(hdr,text=" v3.5",font=("Segoe UI",9),
                  fg=C["t3"],bg=C["sidebar"]).pack(side="left",anchor="s",pady=(0,2))
 
         sc_frame=tk.Frame(p,bg=C["sidebar"])
