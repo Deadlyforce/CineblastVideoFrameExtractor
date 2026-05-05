@@ -39,6 +39,7 @@ DEFAULT_CONFIG = {
     "mark_key":        "s",
     "marked_files":    [],
     "hdr_tonemap":     "hable",
+    "last_video_dir": "",
 }
 
 def load_config():
@@ -1119,9 +1120,19 @@ class App(tk.Tk):
 
     # ── Fichiers ──────────────────────────────────────────────────────────────
     def _pick_video(self):
-        p=filedialog.askopenfilename(title="Choisir une vidéo",
-                                     filetypes=[("Vidéos","*.mp4 *.mkv *.avi *.mov *.wmv *.flv *.m4v *.ts *.webm"),("Tous","*.*")])
-        if p: self.v_path.set(p); self._load_video_info(p)
+        initial = self._cfg.get("last_video_dir", "")
+        if not initial or not os.path.isdir(initial):
+            initial = os.path.expanduser("~")   # dossier utilisateur par défaut
+        p = filedialog.askopenfilename(
+            title="Choisir une vidéo",
+            filetypes=[("Vidéos","*.mp4 *.mkv *.avi *.mov *.wmv *.flv *.m4v *.ts *.webm"),("Tous","*.*")],
+            initialdir=initial
+        )
+        if p:
+            self.v_path.set(p)
+            self._cfg["last_video_dir"] = os.path.dirname(p)
+            self._auto_save_config()
+            self._load_video_info(p)
 
     def _pick_output(self):
         p=filedialog.askdirectory(title="Dossier d'Extraction")
@@ -1774,16 +1785,22 @@ class App(tk.Tk):
 
     def _auto_save_config(self):
         s0,s1=self._get_sash_positions()
-        save_config({"video_path":self.v_path.get(),"output_dir":self.v_outdir.get(),
-                     "work_dir":self.v_workdir.get(),"generic_name":self.v_generic.get(),
-                     "mode":self.v_mode.get(),"count_val":self.v_count.get(),
-                     "interval_val":self.v_intv.get(),"thumb_size":self.v_tsize.get(),
-                     "col_count":self.v_cols.get(),"preview_size":self.v_psize.get(),
-                     "window_size":self.v_winsize.get(),"sash_left":s0,"sash_right":s1,
-                     "confirm_delete":self.v_confirm_del.get(),"black_filter":self.v_black_filter.get(),
-                     "mark_key":self.v_mark_key.get(),"hdr_tonemap":self.v_hdr_tonemap.get(),
-                     "marked_files":[self.thumbs[i]["path"]
-                                     for i in sorted(self.marked) if i<len(self.thumbs)]})
+        save_config({
+            "video_path":self.v_path.get(),
+            "output_dir":self.v_outdir.get(),                     
+            "work_dir":self.v_workdir.get(),
+            "generic_name":self.v_generic.get(),
+            "mode":self.v_mode.get(),
+            "count_val":self.v_count.get(),
+            "interval_val":self.v_intv.get(),"thumb_size":self.v_tsize.get(),
+            "col_count":self.v_cols.get(),"preview_size":self.v_psize.get(),
+            "window_size":self.v_winsize.get(),"sash_left":s0,"sash_right":s1,
+            "confirm_delete":self.v_confirm_del.get(),"black_filter":self.v_black_filter.get(),
+            "mark_key":self.v_mark_key.get(),"hdr_tonemap":self.v_hdr_tonemap.get(),
+            "last_video_dir": self._cfg.get("last_video_dir", ""),
+            "marked_files":[self.thumbs[i]["path"]            
+                            for i in sorted(self.marked) if i<len(self.thumbs)]
+        })
 
     def _restore_marked(self):
         saved=set(self._cfg.get("marked_files",[]))
@@ -1894,16 +1911,27 @@ class App(tk.Tk):
     # ── Sauvegarde config ─────────────────────────────────────────────────────
     def _save_config_action(self):
         s0,s1=self._get_sash_positions()
-        save_config({"video_path":self.v_path.get(),"output_dir":self.v_outdir.get(),
-                     "work_dir":self.v_workdir.get(),"generic_name":self.v_generic.get(),
-                     "mode":self.v_mode.get(),"count_val":self.v_count.get(),
-                     "interval_val":self.v_intv.get(),"thumb_size":self.v_tsize.get(),
-                     "col_count":self.v_cols.get(),"preview_size":self.v_psize.get(),
-                     "window_size":self.v_winsize.get(),"sash_left":s0,"sash_right":s1,
-                     "confirm_delete":self.v_confirm_del.get(),"black_filter":self.v_black_filter.get(),
-                     "mark_key":self.v_mark_key.get(),"hdr_tonemap":self.v_hdr_tonemap.get(),
-                     "marked_files":[self.thumbs[i]["path"]
-                                     for i in sorted(self.marked) if i<len(self.thumbs)]})
+        save_config({
+            "video_path":self.v_path.get(),
+            "output_dir":self.v_outdir.get(),                     
+            "work_dir":self.v_workdir.get(),
+            "generic_name":self.v_generic.get(),
+            "mode":self.v_mode.get(),
+            "count_val":self.v_count.get(),
+            "interval_val":self.v_intv.get(),
+            "thumb_size":self.v_tsize.get(),
+            "col_count":self.v_cols.get(),
+            "preview_size":self.v_psize.get(),
+            "window_size":self.v_winsize.get(),
+            "sash_left":s0,"sash_right":s1,
+            "confirm_delete":self.v_confirm_del.get(),
+            "black_filter":self.v_black_filter.get(),
+            "mark_key":self.v_mark_key.get(),
+            "hdr_tonemap":self.v_hdr_tonemap.get(),
+            "last_video_dir": self._cfg.get("last_video_dir", ""),
+            "marked_files":[self.thumbs[i]["path"]
+                            for i in sorted(self.marked) if i<len(self.thumbs)]
+        })
         self._prog_lbl.config(text="✔  Configuration sauvegardée")
         self.after(3000,lambda: self._prog_lbl.config(text=""))
 
