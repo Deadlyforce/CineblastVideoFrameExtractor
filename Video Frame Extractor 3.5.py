@@ -1467,15 +1467,22 @@ class App(tk.Tk):
         tclbl=tk.Label(cell,text=hms(entry["tc"]),font=("Segoe UI",8),
                        fg=C["t3"],bg=C["thumb_bg"]); tclbl.pack()
         app=self
-        for w in (cell,lbl,tclbl):
-            w.bind("<ButtonPress-1>",lambda e,i=idx,a=app:(a.focus_set(),a._drag_start_from_thumb(e)))
-            w.bind("<Button-1>",lambda e,i=idx,a=app: a._thumb_click(i),add="+")
-            w.bind("<Control-Button-1>",lambda e,i=idx,a=app:(a.focus_set(),a._ctrl_click(i)))
-            w.bind("<Shift-Button-1>",lambda e,i=idx,a=app:(a.focus_set(),a._shift_click(i)))
-            w.bind("<B1-Motion>",lambda e,a=app: a._drag_motion_from_thumb(e))
-            w.bind("<ButtonRelease-1>",lambda e,a=app: a._drag_end_from_thumb(e))
-            w.bind("<Enter>",lambda e,c=cell,i=idx,a=app: a._thumb_hover(c,i,True))
-            w.bind("<Leave>",lambda e,c=cell,i=idx,a=app: a._thumb_hover(c,i,False))
+        
+        # Stockage de l'index sur chaque widget pour les callbacks
+        for w in (cell, lbl, tclbl):
+            w._idx = idx
+
+        # Liaison des événements via des méthodes dédiées
+        for w in (cell, lbl, tclbl):
+            w.bind("<ButtonPress-1>",   self._on_thumb_press)
+            w.bind("<Button-1>",        self._on_thumb_button1)
+            w.bind("<Control-Button-1>",self._on_thumb_ctrl_click)
+            w.bind("<Shift-Button-1>",  self._on_thumb_shift_click)
+            w.bind("<B1-Motion>",       self._on_thumb_motion)
+            w.bind("<ButtonRelease-1>", self._on_thumb_release)
+            w.bind("<Enter>",           self._on_thumb_enter)
+            w.bind("<Leave>",           self._on_thumb_leave)
+
         self.thumb_wids[idx]={"frame":cell,"label":lbl,"tc_lbl":tclbl}
         self._adjust_center_width()
 
@@ -1517,6 +1524,23 @@ class App(tk.Tk):
         for w in self._gf.winfo_children(): w.destroy()
         self.thumb_refs.clear(); self.thumb_wids.clear()
 
+    def _clear_all_thumb_state(self):
+        """Réinitialise complètement l'état des vignettes (zéro image)."""
+        self._clear_grid()
+        self.thumbs.clear()
+        self.thumb_refs.clear()
+        self.thumb_wids.clear()
+        self.sel.clear()
+        self.marked.clear()
+        self._upd_marked_badge()
+        self._prev_lbl.config(image="")
+        self._prev_ref = None
+        self._prev_info.config(text="Cliquez sur une\nvignette…")
+        self._badge_total.config(text="0 image(s)")
+        self._badge_sel.config(text="")
+        self._del_btn.set_state("disabled")
+        self._copy_btn.set_state("disabled")
+
     def _rebuild_grid(self):
         self._clear_grid()
         for i in range(len(self.thumbs)): self._add_thumb(i)
@@ -1536,6 +1560,44 @@ class App(tk.Tk):
         except Exception: pass
 
     def _thumb_click(self,idx): self._click(idx)
+
+    def _get_idx_from_event(self, event):
+        """Retourne l'index stocké dans le widget ayant reçu l'événement."""
+        return event.widget._idx
+
+    def _on_thumb_press(self, event):
+        self.focus_set()
+        self._drag_start_from_thumb(event)
+
+    def _on_thumb_button1(self, event):
+        idx = self._get_idx_from_event(event)
+        self._click(idx)
+
+    def _on_thumb_ctrl_click(self, event):
+        idx = self._get_idx_from_event(event)
+        self.focus_set()
+        self._ctrl_click(idx)
+
+    def _on_thumb_shift_click(self, event):
+        idx = self._get_idx_from_event(event)
+        self.focus_set()
+        self._shift_click(idx)
+
+    def _on_thumb_motion(self, event):
+        self._drag_motion_from_thumb(event)
+
+    def _on_thumb_release(self, event):
+        self._drag_end_from_thumb(event)
+
+    def _on_thumb_enter(self, event):
+        idx = self._get_idx_from_event(event)
+        cell = self.thumb_wids[idx]["frame"]
+        self._thumb_hover(cell, idx, True)
+
+    def _on_thumb_leave(self, event):
+        idx = self._get_idx_from_event(event)
+        cell = self.thumb_wids[idx]["frame"]
+        self._thumb_hover(cell, idx, False)
 
     def _click(self,idx):
         if idx in self.sel:
@@ -1589,26 +1651,67 @@ class App(tk.Tk):
 
     # ── Suppression ───────────────────────────────────────────────────────────
     def _delete_selected(self):
-        if not self.sel: return
-        n=len(self.sel)
+        if not self.sel:
+            return
+        n = len(self.sel)
         if self.v_confirm_del.get():
             if not messagebox.askyesno("Supprimer",
-                    f"Supprimer {n} image(s) sélectionnée(s) ?\nLes fichiers JPG seront supprimés."): return
-        marked_paths={self.thumbs[i]["path"] for i in self.marked if i<len(self.thumbs)}
-        for idx in sorted(self.sel,reverse=True):
-            entry=self.thumbs[idx]
+                    f"Supprimer {n} image(s) sélectionnée(s) ?\nLes fichiers JPG seront supprimés."):
+                return
+
+        # Supprimer les fichiers et les entrées correspondantes
+        for idx in sorted(self.sel, reverse=True):
+            entry = self.thumbs[idx]
             try:
-                if os.path.exists(entry["path"]): os.remove(entry["path"])
+                if os.path.exists(entry["path"]):
+                    os.remove(entry["path"])
             except Exception as ex:
-                messagebox.showwarning("Erreur",f"Impossible de supprimer :\n{entry['path']}\n{ex}")
+                messagebox.showwarning("Erreur", f"Impossible de supprimer :\n{entry['path']}\n{ex}")
+            # Retirer de la liste
             self.thumbs.pop(idx)
+            # Détruire les widgets
+            if idx in self.thumb_wids:
+                self.thumb_wids[idx]["frame"].destroy()
+                del self.thumb_wids[idx]
+
         self.sel.clear()
-        self.marked={i for i,e in enumerate(self.thumbs) if e["path"] in marked_paths}
-        self._upd_badges(); self._upd_marked_badge()
-        self._prev_lbl.config(image=""); self._prev_ref=None
-        self._prev_info.config(text="Cliquez sur une\nvignette…")
+
+        # Si tout a été supprimé, on réinitialise tout
+        if not self.thumbs:
+            self._clear_all_thumb_state()
+            self._auto_save_config()
+            return
+
+        # ----- Renumérotation des widgets restants -----
+        sorted_old_indices = sorted(self.thumb_wids.keys())
+        new_wids = {}
+        cols = self.v_cols.get()
+        for new_idx, old_idx in enumerate(sorted_old_indices):
+            wdata = self.thumb_wids[old_idx]
+            new_wids[new_idx] = wdata
+            # Mettre à jour l'index dans les widgets
+            for widget in (wdata["frame"], wdata["label"], wdata["tc_lbl"]):
+                try:
+                    widget._idx = new_idx
+                except AttributeError:
+                    pass  # Sécurité
+            # Repositionner dans la grille
+            ri, ci = divmod(new_idx, cols)
+            wdata["frame"].grid(row=ri, column=ci, padx=5, pady=5)
+        self.thumb_wids = new_wids
+
+        # Mettre à jour les marquages : on les reconstitue d'après les chemins
+        marked_paths = {self.thumbs[i]["path"] for i in self.marked if i < len(self.thumbs)}
+        self.marked = {i for i, e in enumerate(self.thumbs) if e["path"] in marked_paths}
+
+        # Mettre à jour l'interface
         self._badge_total.config(text=f"{len(self.thumbs)} image(s)")
-        self._rebuild_grid(); self._auto_save_config()
+        self._upd_badges()
+        self._upd_marked_badge()
+        self._prev_lbl.config(image="")
+        self._prev_ref = None
+        self._prev_info.config(text="Cliquez sur une\nvignette…")
+        self._auto_save_config()
 
     def _clear_output_dir(self):
         outdir=self.v_outdir.get()
