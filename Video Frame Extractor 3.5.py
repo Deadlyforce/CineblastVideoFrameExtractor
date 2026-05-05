@@ -1974,21 +1974,39 @@ class App(tk.Tk):
 
     # ── Rechargement dossier ──────────────────────────────────────────────────
     def _reload_extraction_folder(self):
-        outdir=self.v_outdir.get()
-        if not outdir or not os.path.isdir(outdir): return
-        jpgs=sorted([f for f in os.listdir(outdir) if f.lower().endswith((".jpg",".jpeg"))],key=str.lower)
-        if not jpgs: return
-        self.thumbs.clear(); self.thumb_refs.clear(); self.thumb_wids.clear()
-        self.sel.clear(); self.marked.clear(); self._upd_marked_badge(); self._clear_grid()
+        outdir = self.v_outdir.get()
+        if not outdir or not os.path.isdir(outdir):
+            return
+        jpgs = sorted([f for f in os.listdir(outdir)
+                       if f.lower().endswith((".jpg", ".jpeg"))], key=str.lower)
+        if not jpgs:
+            # Dossier vide → vider entièrement l’affichage
+            self._clear_all_thumb_state()
+            self._prog_lbl.config(text="✔  Dossier vide, aucune image.")
+            self.after(3000, lambda: self._prog_lbl.config(text=""))
+            return
+
+        self.thumbs.clear()
+        self.thumb_refs.clear()
+        self.thumb_wids.clear()
+        self.sel.clear()
+        self.marked.clear()
+        self._upd_marked_badge()
+        self._clear_grid()
         self._prog_lbl.config(text=f"Chargement de {len(jpgs)} image(s)…")
+
         def _load():
-            loaded=[]
+            loaded = []
             for fname in jpgs:
-                fpath=os.path.join(outdir,fname)
-                try: loaded.append((Image.open(fpath).copy(),fpath,_parse_tc_from_filename(fname)))
-                except Exception: pass
-            self.after(0,self._reload_done,loaded)
-        threading.Thread(target=_load,daemon=True).start()
+                fpath = os.path.join(outdir, fname)
+                try:
+                    loaded.append((Image.open(fpath).copy(), fpath,
+                                   _parse_tc_from_filename(fname)))
+                except Exception:
+                    pass
+            self.after(0, self._reload_done, loaded)
+
+        threading.Thread(target=_load, daemon=True).start()
 
     def _refresh_folder(self):
         """Relance le chargement des images depuis le dossier d'extraction."""
