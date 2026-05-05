@@ -3,7 +3,7 @@
   "output_dir": "C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/Extraction Photos Temp",
   "work_dir": "C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/2026-05-04 Alien Earth Partie 2",
   "generic_name": "AlienEarth",
-  "mode": "interval",
+  "mode": "count",
   "count_val": 100,
   "interval_val": 15,
   "thumb_size": 200,

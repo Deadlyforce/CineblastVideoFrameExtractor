@@ -637,6 +637,8 @@ class App(tk.Tk):
 
         self.v_path         = tk.StringVar(value=self._cfg["video_path"])
         self.v_outdir       = tk.StringVar(value=self._cfg["output_dir"])
+        self.v_outdir.trace_add("write", lambda *a: self._update_refresh_btn_state())
+
         self.v_workdir      = tk.StringVar(value=self._cfg.get("work_dir",""))
         self.v_generic      = tk.StringVar(value=self._cfg.get("generic_name","capture"))
         self.v_mode         = tk.StringVar(value=self._cfg["mode"])
@@ -675,6 +677,13 @@ class App(tk.Tk):
 
         if self.v_outdir.get() and os.path.isdir(self.v_outdir.get()):
             self.after(150,self._reload_extraction_folder)
+
+    def _update_refresh_btn_state(self):
+        if not hasattr(self, '_refresh_btn'):
+            return
+        outdir = self.v_outdir.get()
+        state = "normal" if outdir and os.path.isdir(outdir) else "disabled"
+        self._refresh_btn.set_state(state)
 
     # ── Sashes ────────────────────────────────────────────────────────────────
     def _restore_sashes(self):
@@ -867,7 +876,7 @@ class App(tk.Tk):
         self._pill=PillSelector(inner,[("Nombre d'images","count"),("Intervalle (s)","interval")],
                                 self.v_mode,command=self._on_mode_change,bg=C["sidebar"])
         self._pill.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(2,6)); row+=1
-        self._sl_count=DarkSlider(inner,from_=5,to=100,resolution=5,variable=self.v_count,
+        self._sl_count=DarkSlider(inner,from_=5,to=500,resolution=5,variable=self.v_count,
                                   label="Nombre d'images",unit="images",
                                   command=self._on_slider_change,bg=C["sidebar"])
         self._sl_count.grid(row=row,column=0,sticky="ew",padx=PAD+4,pady=(0,6)); row+=1
@@ -974,8 +983,22 @@ class App(tk.Tk):
         self._v_cols_var=tk.StringVar(value=str(self.v_cols.get()))
         RoundedCombo(mtb,["3","4","5","6"],self._v_cols_var,
                      width=50,bg=C["panel2"]).pack(side="left",padx=(4,8))
+        
         self._v_cols_var.trace_add("write",self._on_cols_change)
         self.v_mark_key.trace_add("write",lambda *a: self._rebind_mark_key())
+
+        # Bouton Rafraîchir le dossier d'extraction
+        tk.Frame(mtb, bg=C["border"], width=1).pack(side="left", fill="y", pady=2, padx=(8, 0))
+        self._refresh_btn = DarkButton(
+            mtb,
+            "🔄 Rafraîchir",
+            self._refresh_folder,
+            style="ghost",
+            width=110,
+            height=24,
+            font=F_SMALL
+        )
+        self._refresh_btn.pack(side="right", padx=(8, 8))
 
         cf2=tk.Frame(c,bg=C["thumb_bg"]); cf2.grid(row=2,column=0,sticky="nsew")
         cf2.rowconfigure(0,weight=1); cf2.columnconfigure(0,weight=1)
@@ -1849,6 +1872,15 @@ class App(tk.Tk):
                 except Exception: pass
             self.after(0,self._reload_done,loaded)
         threading.Thread(target=_load,daemon=True).start()
+
+    def _refresh_folder(self):
+        """Relance le chargement des images depuis le dossier d'extraction."""
+        outdir = self.v_outdir.get()
+        if not outdir or not os.path.isdir(outdir):
+            self._status("⚠  Aucun dossier d'extraction défini ou inexistant.", duration=4000)
+            return
+        self._status("🔁 Rafraîchissement en cours…", duration=0)
+        self._reload_extraction_folder()
 
     def _reload_done(self,loaded):
         for img,fpath,tc in loaded: self.thumbs.append({"img":img,"path":fpath,"tc":tc})
