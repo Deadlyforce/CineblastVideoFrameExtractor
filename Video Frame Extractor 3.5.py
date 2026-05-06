@@ -469,7 +469,7 @@ class DarkSlider(tk.Frame):
         self._val_lbl.grid(row=0,column=1,sticky="e")
         self._scale=tk.Scale(self,from_=from_,to=to,resolution=resolution,
                              orient="horizontal",variable=variable,
-                             bg=C["sidebar"],fg=C["t1"],troughcolor=C["input"],
+                             bg=C["bg"],fg=C["t1"],troughcolor=C["input"],
                              activebackground=C["accent"],highlightthickness=0,
                              showvalue=False,sliderrelief="flat",sliderlength=14,
                              command=self._on_change)
@@ -536,7 +536,7 @@ class DarkEntry(tk.Entry):
 
 class DarkProgress(tk.Canvas):
     def __init__(self,parent,height=4,**kw):
-        kw.setdefault("bg",C["sidebar"])
+        kw.setdefault("bg",C["bg"])
         super().__init__(parent,height=height,highlightthickness=0,**kw)
         self._v=0; self.bind("<Configure>",lambda e: self._draw())
     def set(self,v): self._v=max(0,min(100,v)); self._draw()
@@ -552,6 +552,106 @@ class DarkProgress(tk.Canvas):
              x2-r,y2,x1+r,y2,x1,y2,x1,y2-r,x1,y1+r,x1,y1]
         self.create_polygon(pts,smooth=True,**kw)
 
+class ModernScrollbar(tk.Canvas):
+    """Scrollbar verticale fine, aux coins arrondis, sans flèche ni marque centrale."""
+    def __init__(self, parent, command=None, **kw):
+        kw.setdefault("bg", C["bg"])
+        kw.setdefault("highlightthickness", 0)
+        kw.setdefault("width", 8)
+        super().__init__(parent, **kw)
+        self.command = command
+        self.pack_propagate(False)
+        self.configure(width=8)
+
+        # État interne
+        self._thumb_top = 0.0
+        self._thumb_height = 1.0
+        self._dragging = False
+        self._drag_start_y = 0
+        self._drag_start_thumb = 0.0
+
+        self.bind("<Configure>", self._redraw)
+        self.bind("<ButtonPress-1>", self._on_press)
+        self.bind("<B1-Motion>", self._on_drag)
+        self.bind("<ButtonRelease-1>", self._on_release)
+
+    def set(self, first, last):
+        """Appelé par le widget lié pour indiquer la portion visible (0.0 à 1.0)."""
+        first = max(0.0, min(1.0, float(first)))
+        last = max(0.0, min(1.0, float(last)))
+        if last <= first:
+            first, last = 0.0, 1.0
+        self._thumb_top = first
+        self._thumb_height = last - first
+        self._redraw()
+
+    def _redraw(self, event=None):
+        self.delete("all")
+        w = self.winfo_width()
+        h = self.winfo_height()
+        if w < 4 or h < 4:
+            return
+        # Rectangle arrondi de fond transparent (pas de fond) – on pourrait ne rien mettre
+        # Pouce (curseur arrondi)
+        thumb_h = max(20, self._thumb_height * h)
+        thumb_y = self._thumb_top * h
+        # Limites
+        thumb_y = max(0, min(thumb_y, h - thumb_h))
+        thumb_h = max(20, thumb_h)
+        # Dessiner un rectangle arrondi pour le pouce
+        r = min(5, w//2, thumb_h//2)
+        self._draw_rounded_rect(2, thumb_y, w-2, thumb_y + thumb_h, r,
+                                fill=C["accent"], outline="")
+
+    def _draw_rounded_rect(self, x1, y1, x2, y2, r, **kw):
+        """Dessine un rectangle aux coins arrondis."""
+        points = [x1+r, y1, x2-r, y1,
+                  x2, y1, x2, y1+r,
+                  x2, y2-r, x2, y2,
+                  x2-r, y2, x1+r, y2,
+                  x1, y2, x1, y2-r,
+                  x1, y1+r, x1, y1]
+        self.create_polygon(points, smooth=True, **kw)
+
+    def _on_press(self, event):
+        """Début du drag du pouce."""
+        h = self.winfo_height()
+        thumb_y = self._thumb_top * h
+        thumb_h = max(20, self._thumb_height * h)
+        if thumb_y <= event.y <= thumb_y + thumb_h:
+            self._dragging = True
+            self._drag_start_y = event.y
+            self._drag_start_thumb = self._thumb_top
+            self.configure(cursor="hand2")
+        else:
+            # Clic en dehors du pouce : saut de page
+            if event.y < thumb_y:
+                delta = -0.1
+            else:
+                delta = 0.1
+            new_top = max(0.0, min(1.0, self._thumb_top + delta))
+            self._move_to(new_top)
+
+    def _on_drag(self, event):
+        if not self._dragging:
+            return
+        h = self.winfo_height()
+        if h < 1:
+            return
+        dy = (event.y - self._drag_start_y) / h
+        new_top = max(0.0, min(1.0 - self._thumb_height, self._drag_start_thumb + dy))
+        self._move_to(new_top)
+
+    def _on_release(self, event):
+        self._dragging = False
+        self.configure(cursor="")
+
+    def _move_to(self, top):
+        """Appelle la commande de défilement avec 'moveto'."""
+        if self.command:
+            self.command("moveto", top)
+        # La mise à jour du pouce se fera via set(...) rappelé par le widget
+
 
 class HSep(tk.Frame):
     def __init__(self,parent,**kw):
@@ -559,7 +659,7 @@ class HSep(tk.Frame):
 
 class SectLabel(tk.Label):
     def __init__(self,parent,text,**kw):
-        kw.setdefault("bg",C["sidebar"]); kw.setdefault("fg",C["t3"])
+        kw.setdefault("bg",C["bg"]); kw.setdefault("fg",C["t3"])
         kw.setdefault("font",F_SECT); kw.setdefault("anchor","w")
         super().__init__(parent,text=text.upper(),**kw)
 
@@ -604,10 +704,7 @@ def setup_style(root):
                 arrowcolor=C["t2"],font=F_UI,padding=4)
     s.map("TCombobox",fieldbackground=[("readonly",C["input"])],
           bordercolor=[("focus",C["accent"])])
-    s.configure("Vertical.TScrollbar",troughcolor=C["bg"],background=C["border"],
-                arrowcolor=C["t3"],bordercolor=C["bg"],darkcolor=C["bg"],
-                lightcolor=C["bg"],relief="flat",width=8)
-    s.map("Vertical.TScrollbar",background=[("active",C["border2"])])
+
 
 def _parse_tc_from_filename(fname):
     import re
@@ -676,6 +773,8 @@ class App(tk.Tk):
         if self.v_outdir.get() and os.path.isdir(self.v_outdir.get()):
             self.after(150,self._reload_extraction_folder)
 
+        self._scrollbar_hide_jobs = {}   # pour gérer l'auto-hide
+
     def _update_refresh_btn_state(self):
         if not hasattr(self, '_refresh_btn'):
             return
@@ -693,6 +792,33 @@ class App(tk.Tk):
     def _get_sash_positions(self):
         try: return int(self._pane.sash_coord(0)[0]),int(self._pane.sash_coord(1)[0])
         except Exception: return 310,700
+    
+    def _setup_autohide_scrollbar(self, canvas, scrollbar, place_kw):
+        """Configure une scrollbar qui disparaît hors survol, superposée via place."""
+        # Appliquer le placement initial, puis cacher
+        scrollbar.place(**place_kw)
+        scrollbar.place_forget()
+        canvas.bind("<Enter>", lambda e: self._show_scrollbar(scrollbar, place_kw))
+        canvas.bind("<Leave>", lambda e: self._hide_scrollbar_later(scrollbar))
+        scrollbar.bind("<Enter>", lambda e: self._show_scrollbar(scrollbar, place_kw))
+        scrollbar.bind("<Leave>", lambda e: self._hide_scrollbar_later(scrollbar))
+
+    def _show_scrollbar(self, scrollbar, place_kw=None):
+        """Affiche la scrollbar avec les mêmes paramètres de placement."""
+        if scrollbar in self._scrollbar_hide_jobs:
+            self.after_cancel(self._scrollbar_hide_jobs[scrollbar])
+            del self._scrollbar_hide_jobs[scrollbar]
+        if place_kw:
+            scrollbar.place(**place_kw)
+        else:
+            scrollbar.place()   # fallback
+
+    def _hide_scrollbar_later(self, scrollbar):
+        """Cache la scrollbar après 300 ms via place_forget."""
+        if scrollbar in self._scrollbar_hide_jobs:
+            self.after_cancel(self._scrollbar_hide_jobs[scrollbar])
+        job = self.after(500, lambda: scrollbar.place_forget())
+        self._scrollbar_hide_jobs[scrollbar] = job
 
     def _apply_window_size(self,size):
         self.update_idletasks()
@@ -709,9 +835,9 @@ class App(tk.Tk):
         self._pane=tk.PanedWindow(self,orient="horizontal",bg=C["bg"],
                                   sashwidth=5,sashrelief="flat",opaqueresize=True)
         self._pane.pack(fill="both",expand=True)
-        self._lf=tk.Frame(self._pane,bg=C["sidebar"])
+        self._lf=tk.Frame(self._pane,bg=C["bg"])
         self._cf=tk.Frame(self._pane,bg=C["bg"])
-        self._rf=tk.Frame(self._pane,bg=C["sidebar"])
+        self._rf=tk.Frame(self._pane,bg=C["bg"])
         self._pane.add(self._lf,minsize=LEFT_MIN_W,sticky="nsew")
         self._pane.add(self._cf,minsize=300,sticky="nsew")
         self._pane.add(self._rf,minsize=180,sticky="nsew")
@@ -722,34 +848,44 @@ class App(tk.Tk):
 
     def _build_left(self):
         p=self._lf; p.rowconfigure(1,weight=1); p.columnconfigure(0,weight=1)
-        hdr=tk.Frame(p,bg=C["sidebar"])
+        hdr=tk.Frame(p,bg=C["bg"])
         hdr.grid(row=0,column=0,sticky="ew",padx=14,pady=(14,4))
         tk.Label(hdr,text="Frame",font=("Segoe UI Light",20),
-                 fg=C["t2"],bg=C["sidebar"]).pack(side="left")
+                 fg=C["t2"],bg=C["bg"]).pack(side="left")
         tk.Label(hdr,text="Extractor",font=("Segoe UI Semibold",20),
-                 fg=C["accent"],bg=C["sidebar"]).pack(side="left",padx=(4,0))
+                 fg=C["accent"],bg=C["bg"]).pack(side="left",padx=(4,0))
         tk.Label(hdr,text=" v3.5",font=("Segoe UI",9),
-                 fg=C["t3"],bg=C["sidebar"]).pack(side="left",anchor="s",pady=(0,2))
+                 fg=C["t3"],bg=C["bg"]).pack(side="left",anchor="s",pady=(0,2))
 
-        sc_frame=tk.Frame(p,bg=C["sidebar"])
+        sc_frame=tk.Frame(p,bg=C["bg"])
         sc_frame.grid(row=1,column=0,sticky="nsew")
         sc_frame.rowconfigure(0,weight=1); sc_frame.columnconfigure(0,weight=1)
-        sc=tk.Canvas(sc_frame,bg=C["sidebar"],highlightthickness=0)
+        sc=tk.Canvas(sc_frame,bg=C["bg"],highlightthickness=0)
         sc.grid(row=0,column=0,sticky="nsew")
-        vsb=ttk.Scrollbar(sc_frame,orient="vertical",command=sc.yview,
-                          style="Vertical.TScrollbar")
-        vsb.grid(row=0,column=1,sticky="ns")
-        sc.configure(yscrollcommand=vsb.set)
-        inner=tk.Frame(sc,bg=C["sidebar"]); win_id=sc.create_window((0,0),window=inner,anchor="nw")
+        
+        # Création de la scrollbar moderne, enfant de sc_frame
+        self._left_scrollbar = ModernScrollbar(sc_frame, command=sc.yview)
+        # Définition du placement superposé (flotte à droite du canvas)
+        left_place_kw = {'in_': sc, 'relx': 1.0, 'rely': 0.0,
+                         'relheight': 1.0, 'anchor': 'ne', 'width': 8, 'x': -2}
+        self._setup_autohide_scrollbar(sc, self._left_scrollbar, left_place_kw)
+
+        sc.configure(yscrollcommand=self._left_scrollbar.set)
+
+        inner=tk.Frame(sc,bg=C["bg"]); win_id=sc.create_window((0,0),window=inner,anchor="nw")
         inner.columnconfigure(0,weight=1)
         inner.bind("<Configure>",lambda e: sc.configure(scrollregion=sc.bbox("all")))
-        sc.bind("<Configure>",lambda e: sc.itemconfig(win_id,width=e.width))
+        sc.bind("<Configure>", lambda e: sc.itemconfig(win_id, width=e.width - 15))
         sc.bind("<MouseWheel>",lambda e: sc.yview_scroll(-int(e.delta/120),"units"))
         sc.bind("<Button-4>",lambda e: sc.yview_scroll(-1,"units"))
         sc.bind("<Button-5>",lambda e: sc.yview_scroll(1,"units"))
+
+        # Auto-hide de la scrollbar gauche
+        self._setup_autohide_scrollbar(sc, self._left_scrollbar, left_place_kw)
+
         self._build_left_content(inner)
 
-        footer=tk.Frame(p,bg=C["sidebar"])
+        footer=tk.Frame(p,bg=C["bg"])
         footer.grid(row=2,column=0,sticky="ew"); footer.columnconfigure(0,weight=1)
         HSep(footer).grid(row=0,column=0,sticky="ew")
         DarkButton(footer,"💾  Sauvegarder la configuration",self._save_config_action,
@@ -763,13 +899,13 @@ class App(tk.Tk):
         ff_text=("✔  ffmpeg détecté — extraction couleurs fidèles"
                  if self._ffmpeg_ok else
                  "⚠  ffmpeg absent — couleurs approximatives\n   Installez ffmpeg !")
-        tk.Label(inner,text=ff_text,font=F_SMALL,fg=ff_color,bg=C["sidebar"],
+        tk.Label(inner,text=ff_text,font=F_SMALL,fg=ff_color,bg=C["bg"],
                  anchor="w",padx=14,pady=6,justify="left",wraplength=260
                  ).grid(row=row,column=0,sticky="ew"); row+=1
 
         # Indicateur HDR
         self._hdr_badge=tk.Label(inner,text="SDR — espace colorimétrique standard",
-                                 font=F_SMALL,fg=C["t3"],bg=C["sidebar"],
+                                 font=F_SMALL,fg=C["t3"],bg=C["bg"],
                                  anchor="w",padx=14,pady=4,justify="left",wraplength=260)
         self._hdr_badge.grid(row=row,column=0,sticky="ew"); row+=1
 
@@ -808,12 +944,12 @@ class App(tk.Tk):
 
         # Source
         row=self._sect(inner,row,"Fichier source")
-        f=tk.Frame(inner,bg=C["sidebar"]); f.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(2,4))
+        f=tk.Frame(inner,bg=C["bg"]); f.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(2,4))
         f.columnconfigure(0,weight=1); row+=1
         DarkEntry(f,textvariable=self.v_path).grid(row=0,column=0,sticky="ew",ipady=5,padx=(0,6))
         DarkButton(f,"Parcourir",self._pick_video,width=80,height=30).grid(row=0,column=1)
         self._src_name_lbl=tk.Label(inner,text="—",font=F_MONO,fg=C["accent"],
-                                    bg=C["sidebar"],anchor="w",padx=14)
+                                    bg=C["bg"],anchor="w",padx=14)
         self._src_name_lbl.grid(row=row,column=0,sticky="ew",pady=(0,2)); row+=1
         def _upd_src(*a):
             p=self.v_path.get()
@@ -827,12 +963,12 @@ class App(tk.Tk):
 
         # Dossier Extraction
         row=self._sect(inner,row,"Dossier d'Extraction")
-        f2=tk.Frame(inner,bg=C["sidebar"]); f2.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(2,6))
+        f2=tk.Frame(inner,bg=C["bg"]); f2.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(2,6))
         f2.columnconfigure(0,weight=1); row+=1
         DarkEntry(f2,textvariable=self.v_outdir).grid(row=0,column=0,sticky="ew",ipady=5,padx=(0,6))
         DarkButton(f2,"Parcourir",self._pick_output,width=80,height=30).grid(row=0,column=1)
         self._outdir_name_lbl=tk.Label(inner,text="—",font=F_MONO,fg=C["accent"],
-                                       bg=C["sidebar"],anchor="w",padx=14)
+                                       bg=C["bg"],anchor="w",padx=14)
         self._outdir_name_lbl.grid(row=row,column=0,sticky="ew",pady=(0,2)); row+=1
         def _upd_out(*a):
             p=self.v_outdir.get()
@@ -842,12 +978,12 @@ class App(tk.Tk):
 
         # Dossier Travail
         row=self._sect(inner,row,"Dossier de Travail")
-        f3=tk.Frame(inner,bg=C["sidebar"]); f3.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(2,6))
+        f3=tk.Frame(inner,bg=C["bg"]); f3.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(2,6))
         f3.columnconfigure(0,weight=1); row+=1
         DarkEntry(f3,textvariable=self.v_workdir).grid(row=0,column=0,sticky="ew",ipady=5,padx=(0,6))
         DarkButton(f3,"Parcourir",self._pick_workdir,width=80,height=30).grid(row=0,column=1)
         self._workdir_name_lbl=tk.Label(inner,text="—",font=F_MONO,fg=C["accent"],
-                                        bg=C["sidebar"],anchor="w",padx=14)
+                                        bg=C["bg"],anchor="w",padx=14)
         self._workdir_name_lbl.grid(row=row,column=0,sticky="ew",pady=(0,2)); row+=1
         def _upd_wk(*a):
             p=self.v_workdir.get()
@@ -856,15 +992,15 @@ class App(tk.Tk):
 
         # Nom générique (déplacé ici, sous le dossier de travail)
         row=self._sect(inner,row,"Renommer les fichiers à déplacer")
-        nm=tk.Frame(inner,bg=C["sidebar"]); nm.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(2,4))
+        nm=tk.Frame(inner,bg=C["bg"]); nm.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(2,4))
         nm.columnconfigure(0,weight=1); row+=1
         DarkEntry(nm,textvariable=self.v_generic).grid(row=0,column=0,sticky="ew",ipady=5,padx=(0,6))
-        tk.Label(nm,text="_0001.jpg",font=F_SMALL,fg=C["t3"],bg=C["sidebar"]
+        tk.Label(nm,text="_0001.jpg",font=F_SMALL,fg=C["t3"],bg=C["bg"]
                  ).grid(row=0,column=1,sticky="w")
 
         self._copy_btn=DarkButton(inner,"📋  Déplacer sélection → Dossier de Travail",
                                   self._move_to_workdir,style="accent",
-                                  width=240,height=30,font=F_SMALL,bg=C["sidebar"])
+                                  width=240,height=30,font=F_SMALL,bg=C["bg"])
         self._copy_btn.grid(row=row,column=0,pady=(4,4),padx=PAD)
         self._copy_btn.set_state("disabled"); row+=1
         HSep(inner).grid(row=row,column=0,sticky="ew",padx=PAD,pady=6); row+=1
@@ -872,33 +1008,33 @@ class App(tk.Tk):
         # Mode capture
         row=self._sect(inner,row,"Mode de capture")
         self._pill=PillSelector(inner,[("Nombre d'images","count"),("Intervalle (s)","interval")],
-                                self.v_mode,command=self._on_mode_change,bg=C["sidebar"])
+                                self.v_mode,command=self._on_mode_change,bg=C["bg"])
         self._pill.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(2,6)); row+=1
         self._sl_count=DarkSlider(inner,from_=5,to=500,resolution=5,variable=self.v_count,
                                   label="Nombre d'images",unit="images",
-                                  command=self._on_slider_change,bg=C["sidebar"])
+                                  command=self._on_slider_change,bg=C["bg"])
         self._sl_count.grid(row=row,column=0,sticky="ew",padx=PAD+4,pady=(0,6)); row+=1
         self._sl_intv=DarkSlider(inner,from_=5,to=1800,resolution=5,variable=self.v_intv,
                                  label="Intervalle entre captures",unit="s",
-                                 command=self._on_slider_change,bg=C["sidebar"])
+                                 command=self._on_slider_change,bg=C["bg"])
         self._sl_intv.grid(row=row,column=0,sticky="ew",padx=PAD+4,pady=(0,6)); row+=1
         self._on_mode_change()
 
-        bf=tk.Frame(inner,bg=C["sidebar"]); bf.grid(row=row,column=0,sticky="w",padx=PAD,pady=(4,0)); row+=1
+        bf=tk.Frame(inner,bg=C["bg"]); bf.grid(row=row,column=0,sticky="w",padx=PAD,pady=(4,0)); row+=1
         tk.Checkbutton(bf,text="Supprimer les frames noires (luminosité < 5/255)",
-                       variable=self.v_black_filter,bg=C["sidebar"],fg=C["t2"],
-                       selectcolor=C["input"],activebackground=C["sidebar"],
+                       variable=self.v_black_filter,bg=C["bg"],fg=C["t2"],
+                       selectcolor=C["input"],activebackground=C["bg"],
                        activeforeground=C["t1"],font=F_SMALL,anchor="w",
                        cursor="hand2").pack(side="left")
         HSep(inner).grid(row=row,column=0,sticky="ew",padx=PAD,pady=6); row+=1
 
         # Taille fenêtre
         row=self._sect(inner,row,"Taille de la fenêtre")
-        wf=tk.Frame(inner,bg=C["sidebar"]); wf.grid(row=row,column=0,sticky="w",padx=PAD,pady=(2,10)); row+=1
+        wf=tk.Frame(inner,bg=C["bg"]); wf.grid(row=row,column=0,sticky="w",padx=PAD,pady=(2,10)); row+=1
         self._v_winsize_var=tk.StringVar(value=self.v_winsize.get())
         _saved_ws=self.v_winsize.get()
         _winsize_list=WINDOW_SIZES if _saved_ws in WINDOW_SIZES else WINDOW_SIZES+[_saved_ws]
-        self._winsize_combo=RoundedCombo(wf,_winsize_list,self._v_winsize_var,width=120,bg=C["sidebar"])
+        self._winsize_combo=RoundedCombo(wf,_winsize_list,self._v_winsize_var,width=120,bg=C["bg"])
         self._winsize_combo.pack(side="left")
         DarkButton(wf,"Appliquer",
                    lambda:(self.v_winsize.set(self._v_winsize_var.get()),
@@ -908,7 +1044,7 @@ class App(tk.Tk):
 
         # Actions
         row=self._sect(inner,row,"Actions")
-        act=tk.Frame(inner,bg=C["sidebar"]); act.grid(row=row,column=0,sticky="w",padx=PAD,pady=(4,4)); row+=1
+        act=tk.Frame(inner,bg=C["bg"]); act.grid(row=row,column=0,sticky="w",padx=PAD,pady=(4,4)); row+=1
         BTN_W=110; GAP=6; MAIN_W=BTN_W*2+GAP
         self._run_btn=DarkButton(act,"▶  Extraire les frames",self._start_extraction,
                                  style="accent",width=MAIN_W,height=36,font=F_BOLD)
@@ -922,16 +1058,16 @@ class App(tk.Tk):
         DarkButton(act,"🗂  Vider le dossier d'extraction",self._clear_output_dir,
                    style="danger",width=MAIN_W,height=30).grid(row=2,column=0,columnspan=2,pady=(5,0))
 
-        chk=tk.Frame(inner,bg=C["sidebar"]); chk.grid(row=row,column=0,sticky="w",padx=PAD,pady=(6,0)); row+=1
+        chk=tk.Frame(inner,bg=C["bg"]); chk.grid(row=row,column=0,sticky="w",padx=PAD,pady=(6,0)); row+=1
         tk.Checkbutton(chk,text="Demander confirmation avant suppression",
-                       variable=self.v_confirm_del,bg=C["sidebar"],fg=C["t2"],
-                       selectcolor=C["input"],activebackground=C["sidebar"],
+                       variable=self.v_confirm_del,bg=C["bg"],fg=C["t2"],
+                       selectcolor=C["input"],activebackground=C["bg"],
                        activeforeground=C["t1"],font=F_SMALL,anchor="w",
                        cursor="hand2").pack(side="left")
-        self._prog=DarkProgress(inner,height=4,bg=C["sidebar"])
+        self._prog=DarkProgress(inner,height=4,bg=C["bg"])
         self._prog.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(8,2)); row+=1
         self._prog_lbl=tk.Label(inner,text="",font=F_SMALL,fg=C["t3"],
-                                bg=C["sidebar"],anchor="w")
+                                bg=C["bg"],anchor="w")
         self._prog_lbl.grid(row=row,column=0,sticky="ew",padx=PAD+2,pady=(0,14)); row+=1
 
     def _sect(self,parent,row,text):
@@ -1002,10 +1138,13 @@ class App(tk.Tk):
         cf2.rowconfigure(0,weight=1); cf2.columnconfigure(0,weight=1)
         self._cv=tk.Canvas(cf2,bg=C["thumb_bg"],highlightthickness=0)
         self._cv.grid(row=0,column=0,sticky="nsew")
-        vsb=ttk.Scrollbar(cf2,orient="vertical",command=self._cv.yview,
-                          style="Vertical.TScrollbar")
-        vsb.grid(row=0,column=1,sticky="ns")
-        self._cv.configure(yscrollcommand=vsb.set)
+
+        self._center_scrollbar = ModernScrollbar(cf2, command=self._cv.yview)
+        center_place_kw = {'in_': self._cv, 'relx': 1.0, 'rely': 0.0,
+                           'relheight': 1.0, 'anchor': 'ne', 'width': 8, 'x': -2}
+        self._setup_autohide_scrollbar(self._cv, self._center_scrollbar, center_place_kw)
+        self._cv.configure(yscrollcommand=self._center_scrollbar.set)
+
         self._gf=tk.Frame(self._cv,bg=C["thumb_bg"],padx=6,pady=8)
         self._gwin=self._cv.create_window((0,0),window=self._gf,anchor="nw")
         self._gf.bind("<Configure>",lambda e: self._cv.configure(scrollregion=self._cv.bbox("all")))
@@ -1031,15 +1170,15 @@ class App(tk.Tk):
         self._prev_lbl.grid(row=0,column=0,sticky="new",padx=12,pady=(12,12))
         HSep(r).grid(row=2,column=0,sticky="ew",padx=8)
         self._prev_info=tk.Label(r,text="Cliquez sur une\nvignette…",font=F_SMALL,
-                                 fg=C["t3"],bg=C["sidebar"],justify="left",padx=14,pady=8)
+                                 fg=C["t3"],bg=C["bg"],justify="left",padx=14,pady=8)
         self._prev_info.grid(row=3,column=0,sticky="w")
         HSep(r).grid(row=4,column=0,sticky="ew",padx=8)
-        pf=tk.Frame(r,bg=C["sidebar"]); pf.grid(row=5,column=0,sticky="ew",padx=12,pady=(6,10))
-        tk.Label(pf,text="Taille :",font=F_SMALL,fg=C["t3"],bg=C["sidebar"]).pack(side="left")
+        pf=tk.Frame(r,bg=C["bg"]); pf.grid(row=5,column=0,sticky="ew",padx=12,pady=(6,10))
+        tk.Label(pf,text="Taille :",font=F_SMALL,fg=C["t3"],bg=C["bg"]).pack(side="left")
         self._v_psize_var=tk.StringVar(value=str(self.v_psize.get()))
         RoundedCombo(pf,["150","200","250","300","350","400","450","500","550","600","650"],
-                     self._v_psize_var,width=80,bg=C["sidebar"]).pack(side="left",padx=(8,0))
-        tk.Label(pf,text="px",font=F_SMALL,fg=C["t3"],bg=C["sidebar"]).pack(side="left",padx=(5,0))
+                     self._v_psize_var,width=80,bg=C["bg"]).pack(side="left",padx=(8,0))
+        tk.Label(pf,text="px",font=F_SMALL,fg=C["t3"],bg=C["bg"]).pack(side="left",padx=(5,0))
         self._v_psize_var.trace_add("write",self._on_psize_change)
 
     # ── Bind ──────────────────────────────────────────────────────────────────
@@ -1184,7 +1323,7 @@ class App(tk.Tk):
         else:
             self._hdr_badge.config(
                 text="SDR — espace colorimétrique standard",
-                fg=C["t3"], bg=C["sidebar"])
+                fg=C["t3"], bg=C["bg"])
             self._hdr_tonemap_frame.grid_remove()
 
     # ── Options affichage ─────────────────────────────────────────────────────
