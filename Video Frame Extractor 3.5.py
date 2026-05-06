@@ -782,6 +782,7 @@ class App(tk.Tk):
         state = "normal" if outdir and os.path.isdir(outdir) else "disabled"
         self._refresh_btn.set_state(state)
 
+
     # ── Sashes ────────────────────────────────────────────────────────────────
     def _restore_sashes(self):
         try:
@@ -830,6 +831,7 @@ class App(tk.Tk):
             except ValueError: w,h=1280,800
         self.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
 
+
     # ── Build UI ──────────────────────────────────────────────────────────────
     def _build_ui(self):
         self._pane=tk.PanedWindow(self,orient="horizontal",bg=C["bg"],
@@ -861,14 +863,16 @@ class App(tk.Tk):
         sc_frame.grid(row=1,column=0,sticky="nsew")
         sc_frame.rowconfigure(0,weight=1); sc_frame.columnconfigure(0,weight=1)
         sc=tk.Canvas(sc_frame,bg=C["bg"],highlightthickness=0)
+        self._left_canvas = sc
         sc.grid(row=0,column=0,sticky="nsew")
         
         # Création de la scrollbar moderne, enfant de sc_frame
         self._left_scrollbar = ModernScrollbar(sc_frame, command=sc.yview)
         # Définition du placement superposé (flotte à droite du canvas)
         left_place_kw = {'in_': sc, 'relx': 1.0, 'rely': 0.0,
-                         'relheight': 1.0, 'anchor': 'ne', 'width': 8, 'x': -2}
+                         'relheight': 1.0, 'anchor': 'ne', 'width': 8, 'x': 0}
         self._setup_autohide_scrollbar(sc, self._left_scrollbar, left_place_kw)
+
 
         sc.configure(yscrollcommand=self._left_scrollbar.set)
 
@@ -890,6 +894,7 @@ class App(tk.Tk):
         HSep(footer).grid(row=0,column=0,sticky="ew")
         DarkButton(footer,"💾  Sauvegarder la configuration",self._save_config_action,
                    style="ghost",width=240,height=32,font=F_SMALL).grid(row=1,column=0,pady=8)
+
 
     def _build_left_content(self, inner):
         PAD=12; row=0
@@ -1220,12 +1225,31 @@ class App(tk.Tk):
         bid=self.bind(f"<KeyPress-{key}>",self._on_mark_key,add=True)
         self._mark_binding_id=(f"<KeyPress-{key}>",bid)
 
-    def _scroll_universal(self,e):
-        wx=self._cv.winfo_rootx(); wy=self._cv.winfo_rooty()
-        if wx<=e.x_root<=wx+self._cv.winfo_width() and wy<=e.y_root<=wy+self._cv.winfo_height():
-            if e.num==4:   self._cv.yview_scroll(-1,"units")
-            elif e.num==5: self._cv.yview_scroll(1,"units")
-            elif hasattr(e,"delta") and e.delta: self._cv.yview_scroll(-int(e.delta/120),"units")
+    def _scroll_universal(self, e):
+        # Canvas central
+        wx = self._cv.winfo_rootx()
+        wy = self._cv.winfo_rooty()
+        if wx <= e.x_root <= wx + self._cv.winfo_width() and wy <= e.y_root <= wy + self._cv.winfo_height():
+            if e.num == 4:
+                self._cv.yview_scroll(-1, "units")
+            elif e.num == 5:
+                self._cv.yview_scroll(1, "units")
+            elif hasattr(e, "delta") and e.delta:
+                self._cv.yview_scroll(-int(e.delta / 120), "units")
+            return  # priorité au centre
+
+        # Canvas gauche
+        if hasattr(self, '_left_canvas') and self._left_canvas.winfo_exists():
+            lx = self._left_canvas.winfo_rootx()
+            ly = self._left_canvas.winfo_rooty()
+            if lx <= e.x_root <= lx + self._left_canvas.winfo_width() and \
+               ly <= e.y_root <= ly + self._left_canvas.winfo_height():
+                if e.num == 4:
+                    self._left_canvas.yview_scroll(-1, "units")
+                elif e.num == 5:
+                    self._left_canvas.yview_scroll(1, "units")
+                elif hasattr(e, "delta") and e.delta:
+                    self._left_canvas.yview_scroll(-int(e.delta / 120), "units")
 
     def _scroll(self,e):
         if e.num==4:   self._cv.yview_scroll(-1,"units")
@@ -2117,9 +2141,8 @@ class App(tk.Tk):
         if not outdir or not os.path.isdir(outdir):
             return
         jpgs = sorted([f for f in os.listdir(outdir)
-                       if f.lower().endswith((".jpg", ".jpeg"))], key=str.lower)
+                    if f.lower().endswith((".jpg", ".jpeg"))], key=str.lower)
         if not jpgs:
-            # Dossier vide → vider entièrement l’affichage
             self._clear_all_thumb_state()
             self._prog_lbl.config(text="✔  Dossier vide, aucune image.")
             self.after(3000, lambda: self._prog_lbl.config(text=""))
@@ -2132,20 +2155,12 @@ class App(tk.Tk):
         self.marked.clear()
         self._upd_marked_badge()
         self._clear_grid()
-        self._prog_lbl.config(text=f"Chargement de {len(jpgs)} image(s)…")
+        self._prog_lbl.config(text=f"Lecture du dossier ({len(jpgs)} fichier(s))…")
 
-        def _load():
-            loaded = []
-            for fname in jpgs:
-                fpath = os.path.join(outdir, fname)
-                try:
-                    loaded.append((Image.open(fpath).copy(), fpath,
-                                   _parse_tc_from_filename(fname)))
-                except Exception:
-                    pass
-            self.after(0, self._reload_done, loaded)
-
-        threading.Thread(target=_load, daemon=True).start()
+        # Plus de thread : on livre les chemins directement, sans charger les images
+        entries = [(os.path.join(outdir, fname),
+                    _parse_tc_from_filename(fname)) for fname in jpgs]
+        self._reload_done_lazy(entries)
 
     def _refresh_folder(self):
         """Relance le chargement des images depuis le dossier d'extraction."""
@@ -2156,14 +2171,43 @@ class App(tk.Tk):
         self._status("🔁 Rafraîchissement en cours…", duration=0)
         self._reload_extraction_folder()
 
-    def _reload_done(self,loaded):
-        for img,fpath,tc in loaded: self.thumbs.append({"img":img,"path":fpath,"tc":tc})
-        for i in range(len(self.thumbs)): self._add_thumb(i)
+    def _reload_done(self, loaded):
+        # Stocker toutes les données sans encore créer de widgets
+        for img, fpath, tc in loaded:
+            self.thumbs.append({"img": img, "path": fpath, "tc": tc})
         self._badge_total.config(text=f"{len(self.thumbs)} image(s)")
-        self._prog_lbl.config(text=f"✔  {len(self.thumbs)} image(s) rechargée(s)")
-        self.after(3000,lambda: self._prog_lbl.config(text=""))
-        self.after(50,  lambda: self._fit_window(animate=False))
-        self.after(80,  self._restore_marked)
+        self._prog_lbl.config(text=f"Chargement des vignettes… 0 / {len(self.thumbs)}")
+        # Lancer la création progressive des vignettes
+        self._build_thumbs_async(0)
+
+    def _reload_done_lazy(self, entries):
+        """Stocke les métadonnées sans charger les pixels, puis construit les vignettes une par une."""
+        for fpath, tc in entries:
+            # Image à None : sera chargée à la demande dans _add_thumb
+            self.thumbs.append({"img": None, "path": fpath, "tc": tc})
+        self._badge_total.config(text=f"{len(self.thumbs)} image(s)")
+        self._prog_lbl.config(text=f"Chargement des vignettes… 0 / {len(self.thumbs)}")
+        self._build_thumbs_async(0)
+
+    def _build_thumbs_async(self, start_idx):
+        BATCH_SIZE = 5  # plus petit = UI plus réactive
+        end_idx = min(start_idx + BATCH_SIZE, len(self.thumbs))
+        for i in range(start_idx, end_idx):
+            entry = self.thumbs[i]
+            if entry["img"] is None:          # ← chargement à la demande
+                try:
+                    entry["img"] = Image.open(entry["path"]).copy()
+                except Exception:
+                    continue
+            self._add_thumb(i)
+        self._prog_lbl.config(text=f"Chargement des vignettes… {end_idx} / {len(self.thumbs)}")
+        if end_idx < len(self.thumbs):
+            self.after(1, self._build_thumbs_async, end_idx)
+        else:
+            self._prog_lbl.config(text=f"✔  {len(self.thumbs)} image(s) rechargée(s)")
+            self.after(3000, lambda: self._prog_lbl.config(text=""))
+            self.after(50, lambda: self._fit_window(animate=False))
+            self.after(80, self._restore_marked)
 
     # ── Sauvegarde config ─────────────────────────────────────────────────────
     def _save_config_action(self):
