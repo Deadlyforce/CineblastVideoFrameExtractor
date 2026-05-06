@@ -1357,9 +1357,12 @@ class App(tk.Tk):
         self._rebuild_grid(); self._fit_window(animate=True)
 
     def _on_cols_change(self,*a):
-        try: self.v_cols.set(int(self._v_cols_var.get()))
-        except: pass
-        self._rebuild_grid(); self._fit_window(animate=True)
+        try:
+            self.v_cols.set(int(self._v_cols_var.get()))
+        except:
+            pass
+        self._reflow_grid()          # ← au lieu de _rebuild_grid
+        self._fit_window(animate=True)
 
     def _on_psize_change(self,*a):
         try: self.v_psize.set(int(self._v_psize_var.get()))
@@ -1649,36 +1652,78 @@ class App(tk.Tk):
         self.thumb_wids[idx]={"frame":cell,"label":lbl,"tc_lbl":tclbl}
         self._adjust_center_width()
 
+        if not getattr(self, '_loading_thumbs', False):
+            self._adjust_center_width()
+
     # ── Redimensionnement ─────────────────────────────────────────────────────
     _fit_job=None
-    def _fit_window(self,animate=True):
-        SASH_W=5; sz=self.v_tsize.get(); cols=self.v_cols.get()
-        center_need=cols*(sz+22)+12+14+10; right_need=self.v_psize.get()+36
+
+    def _fit_window(self, animate=True):
+        SASH_W = 5
+        sz = self.v_tsize.get()
+        cols = self.v_cols.get()
+        center_need = cols * (sz + 22) + 12 + 14 + 10
+        right_need = self.v_psize.get() + 36
         self.update_idletasks()
-        try: s0=self._pane.sash_coord(0)[0]
-        except Exception: s0=LEFT_MIN_W
-        sw=self.winfo_screenwidth()
-        win_target=min(max(s0+center_need+right_need+SASH_W*2+4,LEFT_MIN_W+300),sw-40)
-        cy=self.winfo_y()
+
+        try:
+            s0 = self._pane.sash_coord(0)[0]
+        except Exception:
+            s0 = LEFT_MIN_W
+
+        # ── Pendant le chargement : sash droit seulement, pas de geometry() ──
+        if getattr(self, '_loading_thumbs', False):
+            try:
+                self._pane.paneconfig(self._cf, minsize=center_need)
+                self._pane.paneconfig(self._rf, minsize=right_need)
+            except Exception:
+                pass
+            return
+
+        # ── Comportement normal hors chargement ──
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        win_target = min(max(s0 + center_need + right_need + SASH_W * 2 + 4,
+                            LEFT_MIN_W + 300), sw - 40)
+        cy = self.winfo_y()
+
         def _apply(w):
-            cx=max(0,(sw-w)//2)
+            cx = max(0, (sw - w) // 2)
             self.geometry(f"{w}x{self.winfo_height()}+{cx}+{cy}")
             self.update_idletasks()
             try:
-                total=self._pane.winfo_width()
-                s1_new=max(s0+center_need,total-right_need-SASH_W)
-                self._pane.sash_place(1,s1_new,0)
-                self._pane.paneconfig(self._rf,minsize=right_need)
-                self._pane.paneconfig(self._cf,minsize=center_need)
-            except Exception: pass
-        if not animate: _apply(win_target); return
-        w_start=self.winfo_width(); delta=win_target-w_start
-        if abs(delta)<4: _apply(win_target); return
-        if self._fit_job: self.after_cancel(self._fit_job); self._fit_job=None
+                total = self._pane.winfo_width()
+                s1_new = max(s0 + center_need, total - right_need - SASH_W)
+                self._pane.sash_place(0, s0, 0)
+                self._pane.sash_place(1, s1_new, 0)
+                self._pane.paneconfig(self._rf, minsize=right_need)
+                self._pane.paneconfig(self._cf, minsize=center_need)
+            except Exception:
+                pass
+
+        if not animate:
+            _apply(win_target)
+            return
+
+        w_start = self.winfo_width()
+        delta = win_target - w_start
+        if abs(delta) < 4:
+            _apply(win_target)
+            return
+
+        if self._fit_job:
+            self.after_cancel(self._fit_job)
+            self._fit_job = None
+
         def _step(i):
-            t=i/8; ease=t*(2-t); _apply(int(w_start+delta*ease))
-            if i<8: self._fit_job=self.after(15,_step,i+1)
-            else:   self._fit_job=None; _apply(win_target)
+            t = i / 8
+            ease = t * (2 - t)
+            _apply(int(w_start + delta * ease))
+            if i < 8:
+                self._fit_job = self.after(15, _step, i + 1)
+            else:
+                self._fit_job = None
+                _apply(win_target)
+
         _step(1)
 
     def _adjust_center_width(self): self._fit_window(animate=False)
@@ -2162,6 +2207,14 @@ class App(tk.Tk):
                     _parse_tc_from_filename(fname)) for fname in jpgs]
         self._reload_done_lazy(entries)
 
+    def _reflow_grid(self):
+        """Repositionne les widgets existants dans la grille sans rien recréer."""
+        cols = self.v_cols.get()
+        for idx, w in self.thumb_wids.items():
+            ri, ci = divmod(idx, cols)
+            w["frame"].grid(row=ri, column=ci, padx=5, pady=5)
+        self._adjust_center_width()
+
     def _refresh_folder(self):
         """Relance le chargement des images depuis le dossier d'extraction."""
         outdir = self.v_outdir.get()
@@ -2190,6 +2243,9 @@ class App(tk.Tk):
         self._build_thumbs_async(0)
 
     def _build_thumbs_async(self, start_idx):
+        if start_idx == 0:
+            self._loading_thumbs = True   # ← bloque _fit_window pendant le chargement
+
         BATCH_SIZE = 5  # plus petit = UI plus réactive
         end_idx = min(start_idx + BATCH_SIZE, len(self.thumbs))
         for i in range(start_idx, end_idx):
@@ -2204,6 +2260,7 @@ class App(tk.Tk):
         if end_idx < len(self.thumbs):
             self.after(1, self._build_thumbs_async, end_idx)
         else:
+            self._loading_thumbs = False
             self._prog_lbl.config(text=f"✔  {len(self.thumbs)} image(s) rechargée(s)")
             self.after(3000, lambda: self._prog_lbl.config(text=""))
             self.after(50, lambda: self._fit_window(animate=False))
