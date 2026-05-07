@@ -569,6 +569,8 @@ class ModernScrollbar(tk.Canvas):
         self._dragging = False
         self._drag_start_y = 0
         self._drag_start_thumb = 0.0
+        self._visible = False   # pouce invisible par défaut
+
 
         self.bind("<Configure>", self._redraw)
         self.bind("<ButtonPress-1>", self._on_press)
@@ -587,21 +589,19 @@ class ModernScrollbar(tk.Canvas):
 
     def _redraw(self, event=None):
         self.delete("all")
+        if not self._visible:
+            return
         w = self.winfo_width()
         h = self.winfo_height()
         if w < 4 or h < 4:
             return
-        # Rectangle arrondi de fond transparent (pas de fond) – on pourrait ne rien mettre
-        # Pouce (curseur arrondi)
         thumb_h = max(20, self._thumb_height * h)
         thumb_y = self._thumb_top * h
-        # Limites
         thumb_y = max(0, min(thumb_y, h - thumb_h))
-        thumb_h = max(20, thumb_h)
-        # Dessiner un rectangle arrondi pour le pouce
-        r = min(5, w//2, thumb_h//2)
-        self._draw_rounded_rect(2, thumb_y, w-2, thumb_y + thumb_h, r,
+        r = min(5, w // 2, thumb_h // 2)
+        self._draw_rounded_rect(2, thumb_y, w - 2, thumb_y + thumb_h, r,
                                 fill=C["accent"], outline="")
+
 
     def _draw_rounded_rect(self, x1, y1, x2, y2, r, **kw):
         """Dessine un rectangle aux coins arrondis."""
@@ -821,6 +821,26 @@ class App(tk.Tk):
         job = self.after(500, lambda: scrollbar.place_forget())
         self._scrollbar_hide_jobs[scrollbar] = job
 
+    def _show_scrollbar_grid(self, scrollbar):
+        """Rend le pouce visible sans toucher à la géométrie."""
+        if scrollbar in self._scrollbar_hide_jobs:
+            self.after_cancel(self._scrollbar_hide_jobs[scrollbar])
+            del self._scrollbar_hide_jobs[scrollbar]
+        scrollbar._visible = True
+        scrollbar._redraw()
+
+    def _hide_scrollbar_grid_later(self, scrollbar):
+        """Efface le pouce après 500 ms sans toucher à la géométrie."""
+        if scrollbar in self._scrollbar_hide_jobs:
+            self.after_cancel(self._scrollbar_hide_jobs[scrollbar])
+        def _hide():
+            scrollbar._visible = False
+            scrollbar._redraw()
+        job = self.after(500, _hide)
+        self._scrollbar_hide_jobs[scrollbar] = job
+
+
+
     def _apply_window_size(self,size):
         self.update_idletasks()
         sw,sh=self.winfo_screenwidth(),self.winfo_screenheight()
@@ -859,33 +879,37 @@ class App(tk.Tk):
         tk.Label(hdr,text=" v3.5",font=("Segoe UI",9),
                  fg=C["t3"],bg=C["bg"]).pack(side="left",anchor="s",pady=(0,2))
 
-        sc_frame=tk.Frame(p,bg=C["bg"])
-        sc_frame.grid(row=1,column=0,sticky="nsew")
-        sc_frame.rowconfigure(0,weight=1); sc_frame.columnconfigure(0,weight=1)
-        sc=tk.Canvas(sc_frame,bg=C["bg"],highlightthickness=0)
-        self._left_canvas = sc
-        sc.grid(row=0,column=0,sticky="nsew")
-        
-        # Création de la scrollbar moderne, enfant de sc_frame
-        self._left_scrollbar = ModernScrollbar(sc_frame, command=sc.yview)
-        # Définition du placement superposé (flotte à droite du canvas)
-        left_place_kw = {'in_': sc, 'relx': 1.0, 'rely': 0.0,
-                         'relheight': 1.0, 'anchor': 'ne', 'width': 8, 'x': 0}
-        self._setup_autohide_scrollbar(sc, self._left_scrollbar, left_place_kw)
+        sc_frame = tk.Frame(p, bg=C["bg"])
+        sc_frame.grid(row=1, column=0, sticky="nsew")
+        sc_frame.rowconfigure(0, weight=1)
+        sc_frame.columnconfigure(0, weight=1)
+        sc_frame.columnconfigure(1, weight=0)
 
+        sc = tk.Canvas(sc_frame, bg=C["bg"], highlightthickness=0)
+        self._left_canvas = sc
+        sc.grid(row=0, column=0, sticky="nsew")
+
+        self._left_scrollbar = ModernScrollbar(sc_frame, command=sc.yview)
+        self._left_scrollbar.grid(row=0, column=1, sticky="ns", padx=(0, 2))
+        # Pas de grid_remove() — la colonne reste toujours présente
 
         sc.configure(yscrollcommand=self._left_scrollbar.set)
 
-        inner=tk.Frame(sc,bg=C["bg"]); win_id=sc.create_window((0,0),window=inner,anchor="nw")
-        inner.columnconfigure(0,weight=1)
-        inner.bind("<Configure>",lambda e: sc.configure(scrollregion=sc.bbox("all")))
-        sc.bind("<Configure>", lambda e: sc.itemconfig(win_id, width=e.width - 15))
-        sc.bind("<MouseWheel>",lambda e: sc.yview_scroll(-int(e.delta/120),"units"))
-        sc.bind("<Button-4>",lambda e: sc.yview_scroll(-1,"units"))
-        sc.bind("<Button-5>",lambda e: sc.yview_scroll(1,"units"))
+        inner = tk.Frame(sc, bg=C["bg"])
+        win_id = sc.create_window((0, 0), window=inner, anchor="nw")
+        inner.columnconfigure(0, weight=1)
+        inner.bind("<Configure>", lambda e: sc.configure(scrollregion=sc.bbox("all")))
+        sc.bind("<Configure>", lambda e: sc.itemconfig(win_id, width=e.width))
+        sc.bind("<MouseWheel>", lambda e: sc.yview_scroll(-int(e.delta / 120), "units"))
+        sc.bind("<Button-4>",   lambda e: sc.yview_scroll(-1, "units"))
+        sc.bind("<Button-5>",   lambda e: sc.yview_scroll(1, "units"))
 
-        # Auto-hide de la scrollbar gauche
-        self._setup_autohide_scrollbar(sc, self._left_scrollbar, left_place_kw)
+        # Auto-hide : apparaît au survol, disparaît après 500 ms
+        sc.bind("<Enter>",                lambda e: self._show_scrollbar_grid(self._left_scrollbar))
+        sc.bind("<Leave>",                lambda e: self._hide_scrollbar_grid_later(self._left_scrollbar))
+        self._left_scrollbar.bind("<Enter>",  lambda e: self._show_scrollbar_grid(self._left_scrollbar))
+        self._left_scrollbar.bind("<Leave>",  lambda e: self._hide_scrollbar_grid_later(self._left_scrollbar))
+
 
         self._build_left_content(inner)
 
@@ -1144,11 +1168,19 @@ class App(tk.Tk):
         self._cv=tk.Canvas(cf2,bg=C["thumb_bg"],highlightthickness=0)
         self._cv.grid(row=0,column=0,sticky="nsew")
 
+        cf2.columnconfigure(1, weight=0)
+
         self._center_scrollbar = ModernScrollbar(cf2, command=self._cv.yview)
-        center_place_kw = {'in_': self._cv, 'relx': 1.0, 'rely': 0.0,
-                           'relheight': 1.0, 'anchor': 'ne', 'width': 8, 'x': -2}
-        self._setup_autohide_scrollbar(self._cv, self._center_scrollbar, center_place_kw)
+        self._center_scrollbar.grid(row=0, column=1, sticky="ns", padx=(0, 2))
+        # Pas de grid_remove()
+
         self._cv.configure(yscrollcommand=self._center_scrollbar.set)
+
+        self._cv.bind("<Enter>",                    lambda e: self._show_scrollbar_grid(self._center_scrollbar))
+        self._cv.bind("<Leave>",                    lambda e: self._hide_scrollbar_grid_later(self._center_scrollbar))
+        self._center_scrollbar.bind("<Enter>",      lambda e: self._show_scrollbar_grid(self._center_scrollbar))
+        self._center_scrollbar.bind("<Leave>",      lambda e: self._hide_scrollbar_grid_later(self._center_scrollbar))
+
 
         self._gf=tk.Frame(self._cv,bg=C["thumb_bg"],padx=6,pady=8)
         self._gwin=self._cv.create_window((0,0),window=self._gf,anchor="nw")
