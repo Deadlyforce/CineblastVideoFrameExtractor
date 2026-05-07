@@ -569,13 +569,27 @@ class ModernScrollbar(tk.Canvas):
         self._dragging = False
         self._drag_start_y = 0
         self._drag_start_thumb = 0.0
-        self._visible = False   # pouce invisible par défaut
+        self._visible = True   # pouce invisible par défaut
 
 
         self.bind("<Configure>", self._redraw)
         self.bind("<ButtonPress-1>", self._on_press)
         self.bind("<B1-Motion>", self._on_drag)
         self.bind("<ButtonRelease-1>", self._on_release)
+
+        self._hover = False
+        self._base_color = C["border"]   # gris sombre cohérent avec l’interface
+        # Ajouter les bindings de survol sur la scrollbar elle-même
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+
+    def _on_enter(self, event):
+        self._hover = True
+        self._redraw()
+
+    def _on_leave(self, event):
+        self._hover = False
+        self._redraw()
 
     def set(self, first, last):
         """Appelé par le widget lié pour indiquer la portion visible (0.0 à 1.0)."""
@@ -599,8 +613,9 @@ class ModernScrollbar(tk.Canvas):
         thumb_y = self._thumb_top * h
         thumb_y = max(0, min(thumb_y, h - thumb_h))
         r = min(5, w // 2, thumb_h // 2)
+        thumb_color = C["accent"] if self._hover else self._base_color
         self._draw_rounded_rect(2, thumb_y, w - 2, thumb_y + thumb_h, r,
-                                fill=C["accent"], outline="")
+                                fill=thumb_color, outline="")
 
 
     def _draw_rounded_rect(self, x1, y1, x2, y2, r, **kw):
@@ -794,50 +809,50 @@ class App(tk.Tk):
         try: return int(self._pane.sash_coord(0)[0]),int(self._pane.sash_coord(1)[0])
         except Exception: return 310,700
     
-    def _setup_autohide_scrollbar(self, canvas, scrollbar, place_kw):
-        """Configure une scrollbar qui disparaît hors survol, superposée via place."""
-        # Appliquer le placement initial, puis cacher
-        scrollbar.place(**place_kw)
-        scrollbar.place_forget()
-        canvas.bind("<Enter>", lambda e: self._show_scrollbar(scrollbar, place_kw))
-        canvas.bind("<Leave>", lambda e: self._hide_scrollbar_later(scrollbar))
-        scrollbar.bind("<Enter>", lambda e: self._show_scrollbar(scrollbar, place_kw))
-        scrollbar.bind("<Leave>", lambda e: self._hide_scrollbar_later(scrollbar))
+    # def _setup_autohide_scrollbar(self, canvas, scrollbar, place_kw):
+    #     """Configure une scrollbar qui disparaît hors survol, superposée via place."""
+    #     # Appliquer le placement initial, puis cacher
+    #     scrollbar.place(**place_kw)
+    #     scrollbar.place_forget()
+    #     canvas.bind("<Enter>", lambda e: self._show_scrollbar(scrollbar, place_kw))
+    #     canvas.bind("<Leave>", lambda e: self._hide_scrollbar_later(scrollbar))
+    #     scrollbar.bind("<Enter>", lambda e: self._show_scrollbar(scrollbar, place_kw))
+    #     scrollbar.bind("<Leave>", lambda e: self._hide_scrollbar_later(scrollbar))
 
-    def _show_scrollbar(self, scrollbar, place_kw=None):
-        """Affiche la scrollbar avec les mêmes paramètres de placement."""
-        if scrollbar in self._scrollbar_hide_jobs:
-            self.after_cancel(self._scrollbar_hide_jobs[scrollbar])
-            del self._scrollbar_hide_jobs[scrollbar]
-        if place_kw:
-            scrollbar.place(**place_kw)
-        else:
-            scrollbar.place()   # fallback
+    # def _show_scrollbar(self, scrollbar, place_kw=None):
+    #     """Affiche la scrollbar avec les mêmes paramètres de placement."""
+    #     if scrollbar in self._scrollbar_hide_jobs:
+    #         self.after_cancel(self._scrollbar_hide_jobs[scrollbar])
+    #         del self._scrollbar_hide_jobs[scrollbar]
+    #     if place_kw:
+    #         scrollbar.place(**place_kw)
+    #     else:
+    #         scrollbar.place()   # fallback
 
-    def _hide_scrollbar_later(self, scrollbar):
-        """Cache la scrollbar après 300 ms via place_forget."""
-        if scrollbar in self._scrollbar_hide_jobs:
-            self.after_cancel(self._scrollbar_hide_jobs[scrollbar])
-        job = self.after(500, lambda: scrollbar.place_forget())
-        self._scrollbar_hide_jobs[scrollbar] = job
+    # def _hide_scrollbar_later(self, scrollbar):
+    #     """Cache la scrollbar après 300 ms via place_forget."""
+    #     if scrollbar in self._scrollbar_hide_jobs:
+    #         self.after_cancel(self._scrollbar_hide_jobs[scrollbar])
+    #     job = self.after(500, lambda: scrollbar.place_forget())
+    #     self._scrollbar_hide_jobs[scrollbar] = job
 
-    def _show_scrollbar_grid(self, scrollbar):
-        """Rend le pouce visible sans toucher à la géométrie."""
-        if scrollbar in self._scrollbar_hide_jobs:
-            self.after_cancel(self._scrollbar_hide_jobs[scrollbar])
-            del self._scrollbar_hide_jobs[scrollbar]
-        scrollbar._visible = True
-        scrollbar._redraw()
+    # def _show_scrollbar_grid(self, scrollbar):
+    #     """Rend le pouce visible sans toucher à la géométrie."""
+    #     if scrollbar in self._scrollbar_hide_jobs:
+    #         self.after_cancel(self._scrollbar_hide_jobs[scrollbar])
+    #         del self._scrollbar_hide_jobs[scrollbar]
+    #     scrollbar._visible = True
+    #     scrollbar._redraw()
 
-    def _hide_scrollbar_grid_later(self, scrollbar):
-        """Efface le pouce après 500 ms sans toucher à la géométrie."""
-        if scrollbar in self._scrollbar_hide_jobs:
-            self.after_cancel(self._scrollbar_hide_jobs[scrollbar])
-        def _hide():
-            scrollbar._visible = False
-            scrollbar._redraw()
-        job = self.after(500, _hide)
-        self._scrollbar_hide_jobs[scrollbar] = job
+    # def _hide_scrollbar_grid_later(self, scrollbar):
+    #     """Efface le pouce après 500 ms sans toucher à la géométrie."""
+    #     if scrollbar in self._scrollbar_hide_jobs:
+    #         self.after_cancel(self._scrollbar_hide_jobs[scrollbar])
+    #     def _hide():
+    #         scrollbar._visible = False
+    #         scrollbar._redraw()
+    #     job = self.after(500, _hide)
+    #     self._scrollbar_hide_jobs[scrollbar] = job
 
 
 
@@ -905,10 +920,10 @@ class App(tk.Tk):
         sc.bind("<Button-5>",   lambda e: sc.yview_scroll(1, "units"))
 
         # Auto-hide : apparaît au survol, disparaît après 500 ms
-        sc.bind("<Enter>",                lambda e: self._show_scrollbar_grid(self._left_scrollbar))
-        sc.bind("<Leave>",                lambda e: self._hide_scrollbar_grid_later(self._left_scrollbar))
-        self._left_scrollbar.bind("<Enter>",  lambda e: self._show_scrollbar_grid(self._left_scrollbar))
-        self._left_scrollbar.bind("<Leave>",  lambda e: self._hide_scrollbar_grid_later(self._left_scrollbar))
+        # sc.bind("<Enter>",                lambda e: self._show_scrollbar_grid(self._left_scrollbar))
+        # sc.bind("<Leave>",                lambda e: self._hide_scrollbar_grid_later(self._left_scrollbar))
+        # self._left_scrollbar.bind("<Enter>",  lambda e: self._show_scrollbar_grid(self._left_scrollbar))
+        # self._left_scrollbar.bind("<Leave>",  lambda e: self._hide_scrollbar_grid_later(self._left_scrollbar))
 
 
         self._build_left_content(inner)
@@ -1176,10 +1191,10 @@ class App(tk.Tk):
 
         self._cv.configure(yscrollcommand=self._center_scrollbar.set)
 
-        self._cv.bind("<Enter>",                    lambda e: self._show_scrollbar_grid(self._center_scrollbar))
-        self._cv.bind("<Leave>",                    lambda e: self._hide_scrollbar_grid_later(self._center_scrollbar))
-        self._center_scrollbar.bind("<Enter>",      lambda e: self._show_scrollbar_grid(self._center_scrollbar))
-        self._center_scrollbar.bind("<Leave>",      lambda e: self._hide_scrollbar_grid_later(self._center_scrollbar))
+        # self._cv.bind("<Enter>",                    lambda e: self._show_scrollbar_grid(self._center_scrollbar))
+        # self._cv.bind("<Leave>",                    lambda e: self._hide_scrollbar_grid_later(self._center_scrollbar))
+        # self._center_scrollbar.bind("<Enter>",      lambda e: self._show_scrollbar_grid(self._center_scrollbar))
+        # self._center_scrollbar.bind("<Leave>",      lambda e: self._hide_scrollbar_grid_later(self._center_scrollbar))
 
 
         self._gf=tk.Frame(self._cv,bg=C["thumb_bg"],padx=6,pady=8)
