@@ -935,55 +935,130 @@ class App(tk.Tk):
         DarkButton(footer,"💾  Sauvegarder la configuration",self._save_config_action,
                    style="ghost",width=240,height=32,font=F_SMALL).grid(row=1,column=0,pady=8)
 
+    def _build_info_block(self, inner, PAD):
+        """Remplace la construction du bloc d'infos dans _build_left_content."""
+        
+        # Conteneur externe — juste pour le padding et la bordure simulée
+        outer = tk.Frame(inner, bg=C["border"], padx=1, pady=1)
+        outer.grid(row=0, column=0, sticky="ew", padx=PAD, pady=(0, 6))
+        outer.columnconfigure(0, weight=1)
+
+        # Ligne brillante du haut (1px, couleur claire)
+        top_line = tk.Frame(outer, bg=C["t2"], height=1)
+        top_line.grid(row=0, column=0, sticky="ew")
+
+        # Corps du bloc
+        self.info_content = tk.Frame(outer, bg=C["info_bg"], padx=10, pady=6)
+        self.info_content.grid(row=1, column=0, sticky="ew")
+        self.info_content.columnconfigure(0, weight=1)
+
+        # Indicateur FFMPEG (bouton carré)
+        ff_frame = tk.Frame(self.info_content, bg=C["info_bg"])
+        ff_frame.grid(row=0, column=0, sticky="ew", pady=4)
+
+        self._ffmpeg_indicator = tk.Label(
+            ff_frame,
+            text="FFMPEG",
+            font=F_BOLD,
+            bg=C["panel2"],      # gris éteint par défaut
+            fg=C["t3"],
+            relief="ridge",
+            bd=1,
+            padx=8,
+            pady=2,
+            width=10,
+            anchor="center"
+        )
+        self._ffmpeg_indicator.pack(side="left")
+
+        self._ffmpeg_label = tk.Label(
+            ff_frame,
+            text="",
+            font=F_SMALL,
+            fg=C["t3"],
+            bg=C["info_bg"],
+            anchor="w"
+        )
+        self._ffmpeg_label.pack(side="left", padx=(8, 0))
+
+        # Appliquer l'état en fonction de la disponibilité de ffmpeg
+        if self._ffmpeg_ok:
+            self._ffmpeg_indicator.config(bg=C["ok"], fg="black", relief="raised")
+            self._ffmpeg_label.config(text="Couleurs fidèles", fg=C["ok"])
+        else:
+            self._ffmpeg_indicator.config(bg=C["panel2"], fg=C["t3"], relief="ridge")
+            self._ffmpeg_label.config(
+                text="ffmpeg absent — couleurs approximatives. Installez ffmpeg !",
+                fg=C["danger"],
+                wraplength=260
+            )
+
+        # Indicateur HDR10 (bouton carré)
+        hdr_frame = tk.Frame(self.info_content, bg=C["info_bg"])
+        hdr_frame.grid(row=1, column=0, sticky="ew", pady=4)
+        self._hdr10_indicator = tk.Label(
+            hdr_frame,
+            text="HDR10 PQ",
+            font=F_BOLD,
+            bg=C["panel2"],
+            fg=C["t3"],
+            relief="ridge",
+            bd=1,
+            padx=8,
+            pady=2,
+            width=10,
+            anchor="center"
+        )
+        self._hdr10_indicator.pack(side="left")
+
+        # Label texte d'information complémentaire
+        self._hdr_info_label = tk.Label(
+            hdr_frame,
+            text="SDR — espace standard",
+            font=F_SMALL,
+            fg=C["t3"],
+            bg=C["info_bg"],
+            anchor="w"
+        )
+        self._hdr_info_label.pack(side="left", padx=(8, 0))
+
+        # Sélecteur tone mapping (caché par défaut)
+        self._hdr_tonemap_frame = tk.Frame(self.info_content, bg=C["info_bg"])
+        self._hdr_tonemap_frame.columnconfigure(0, weight=1)
+
+        tk.Label(self._hdr_tonemap_frame, text="Tone mapping HDR→SDR :",
+                font=F_SMALL, fg="#ffd54f", bg=C["info_bg"], anchor="w", padx=4
+                ).grid(row=0, column=0, sticky="w", pady=(4, 2))
+
+        tm_row = tk.Frame(self._hdr_tonemap_frame, bg=C["info_bg"])
+        tm_row.grid(row=1, column=0, sticky="w", padx=4, pady=(0, 6))
+
+        for algo, label, tip in [("hable",   "Hable",   "Doux, cinématique — recommandé"),
+                                ("mobius",  "Mobius",  "Équilibré, préserve les couleurs"),
+                                ("reinhard","Reinhard","Simple et rapide")]:
+            rb = tk.Radiobutton(tm_row, text=label, variable=self.v_hdr_tonemap,
+                                value=algo, bg=C["info_bg"], fg="#ffd54f",
+                                selectcolor=C["accent_bg"], activebackground=C["info_bg"],
+                                activeforeground="#fff", font=F_SMALL, cursor="hand2")
+            rb.pack(side="left", padx=(0, 8))
+            Tooltip(rb, lambda t=tip: t)
+
+        tk.Label(self._hdr_tonemap_frame,
+                text="  ℹ  Requiert ffmpeg avec libzimg (zscale).\n"
+                    "  Fallback automatique si non disponible.",
+                font=("Segoe UI", 8), fg="#a09060", bg=C["info_bg"],
+                anchor="w", padx=4, justify="left"
+                ).grid(row=2, column=0, sticky="w", pady=(0, 2))
+
+        # Caché au démarrage
+        # (grid utilisé à la place de pack pour _hdr_tonemap_frame)
 
     def _build_left_content(self, inner):
         PAD=12; row=0
 
-        # Indicateur ffmpeg
-        ff_color=C["ok"] if self._ffmpeg_ok else C["danger"]
-        ff_text=("✔  ffmpeg détecté — extraction couleurs fidèles"
-                 if self._ffmpeg_ok else
-                 "⚠  ffmpeg absent — couleurs approximatives\n   Installez ffmpeg !")
-        tk.Label(inner,text=ff_text,font=F_SMALL,fg=ff_color,bg=C["bg"],
-                 anchor="w",padx=14,pady=6,justify="left",wraplength=260
-                 ).grid(row=row,column=0,sticky="ew"); row+=1
-
-        # Indicateur HDR
-        self._hdr_badge=tk.Label(inner,text="SDR — espace colorimétrique standard",
-                                 font=F_SMALL,fg=C["t3"],bg=C["bg"],
-                                 anchor="w",padx=14,pady=4,justify="left",wraplength=260)
-        self._hdr_badge.grid(row=row,column=0,sticky="ew"); row+=1
-
-        # Sélecteur tone mapping (masqué par défaut, visible si HDR détecté)
-        self._hdr_tonemap_frame=tk.Frame(inner,bg=C["bg"])
-        self._hdr_tonemap_frame.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(0,4))
-        self._hdr_tonemap_frame.columnconfigure(0,weight=1)
-        self._hdr_tonemap_frame.grid_remove()
-        row+=1
-
-        tk.Label(self._hdr_tonemap_frame,text="Tone mapping HDR→SDR :", font=F_SMALL,fg="#ffd54f",
-                 bg=C["bg"],anchor="w",padx=4).grid(row=0,column=0,sticky="w",pady=(4,2))
-        
-        tm_row=tk.Frame(self._hdr_tonemap_frame,bg=C["bg"])
-        tm_row.grid(row=1,column=0,sticky="w",padx=4,pady=(0,6))
-        for algo,label,tip in [
-            ("hable",   "Hable",    "Doux, cinématique — recommandé"),
-            ("mobius",  "Mobius",   "Équilibré, préserve les couleurs"),
-            ("reinhard","Reinhard", "Simple et rapide"),
-        ]:
-            rb=tk.Radiobutton(tm_row,text=f"{label}",variable=self.v_hdr_tonemap,
-                  value=algo,bg=C["bg"],fg="#ffd54f",
-                  selectcolor=C["accent_bg"],activebackground=C["bg"],
-                  activeforeground="#fff",font=F_SMALL,cursor="hand2",
-                  indicatoron=1)
-            rb.pack(side="left",padx=(0,8))
-            Tooltip(rb,lambda t=tip: t)
-
-        tk.Label(self._hdr_tonemap_frame,
-         text="  ℹ  Requiert ffmpeg avec libzimg (zscale).\n"
-              "  Fallback automatique si non disponible.",
-         font=("Segoe UI",8),fg="#a09060",bg=C["bg"],
-         anchor="w",padx=4,justify="left")
+        # ← REMPLACE tout l'ancien bloc canvas par ceci :
+        self._build_info_block(inner, PAD)
+        row += 1
 
 
         # Source
@@ -1210,6 +1285,42 @@ class App(tk.Tk):
             widget.bind("<B1-Motion>",      self._drag_motion)
             widget.bind("<ButtonRelease-1>",self._drag_end)
 
+    def _on_info_canvas_configure(self, event):
+        """Le canvas change de taille → on ajuste la largeur du contenu et on redessine le fond."""
+        w = event.width
+        self.info_canvas.itemconfig("content", width=w)   # force la largeur du contenu
+        self._draw_info_block_bg()
+
+    def _on_info_content_configure(self, event):
+        self.info_content.update_idletasks()
+        h = self.info_content.winfo_reqheight()
+        self.info_canvas.configure(height=h)
+        self._draw_info_block_bg()
+
+    def _draw_info_block_bg(self):
+        cv = self.info_canvas
+        cv.delete("bg")
+        w = cv.winfo_width()
+        h = cv.winfo_height()
+        if w < 4 or h < 4:
+            return
+        r = 10
+        # Fond arrondi
+        pts = [r,0, w-r,0, w,0, w,r, w,h-r, w,h,
+            w-r,h, r,h, 0,h, 0,h-r, 0,r, 0,0]
+        cv.create_polygon(pts, smooth=True, fill=C["info_bg"], outline="", tags="bg")
+
+        # Bordure brillante — coins haut-gauche et haut-droit
+        cv.create_arc(0, 0, 2*r, 2*r,
+                    start=90, extent=90,          # ← haut-gauche ✓
+                    style="arc", outline=C["t1"], width=1, tags="bg")
+        cv.create_arc(w-2*r, 0, w, 2*r,
+                    start=0, extent=90,           # ← haut-droit ✓
+                    style="arc", outline=C["t1"], width=1, tags="bg")
+        # Segment horizontal qui relie les deux arcs
+        cv.create_line(r, 0, w-r, 0,
+                    fill=C["t1"], width=1, tags="bg")
+
     def _build_right(self):
         r=self._rf; r.rowconfigure(1,weight=1); r.columnconfigure(0,weight=1)
         hdr=tk.Frame(r,bg=C["panel"],height=38); hdr.grid(row=0,column=0,sticky="ew")
@@ -1372,6 +1483,13 @@ class App(tk.Tk):
         # Détection HDR en arrière-plan pour ne pas bloquer l'UI
         threading.Thread(target=self._detect_hdr_async, args=(path,), daemon=True).start()
 
+    def _force_info_redraw(self):
+        """Force un redimensionnement et redessine le fond du bloc d'infos."""
+        self.info_content.update_idletasks()
+        h = self.info_content.winfo_reqheight()
+        self.info_canvas.configure(height=h)
+        self._draw_info_block_bg()
+
     # ── HDR ───────────────────────────────────────────────────────────────────
     def _detect_hdr_async(self, path):
         """Lance detect_hdr() en thread, puis met à jour l'UI."""
@@ -1380,22 +1498,63 @@ class App(tk.Tk):
         self.after(0, self._update_hdr_indicator, hdr)
 
     def _update_hdr_indicator(self, hdr):
-        """Met à jour le bandeau HDR dans la sidebar."""
-        if hdr.get("is_hdr"):
-            tf  = hdr.get("transfer","")
-            prim= hdr.get("primaries","")
-            label = "HDR"
-            if "2084" in tf or "pq" in tf:   label = "HDR10 (PQ)"
-            elif "hlg" in tf or "arib" in tf: label = "HDR HLG"
-            self._hdr_badge.config(
-                text=f"{label} détecté — pipeline HDR→SDR actif",
-                fg="#ffd54f", bg=C["bg"])
-            self._hdr_tonemap_frame.grid()   # affiche le sélecteur
+        """
+        Met à jour l'indicateur HDR10 PQ (bouton orange) et le label d'info.
+        Le sélecteur tonemap s'affiche pour tout HDR (PQ ou HLG).
+        """
+        is_hdr = hdr.get("is_hdr", False)
+        transfer = hdr.get("transfer", "").lower()
+        is_hdr10 = ("smpte2084" in transfer) or ("pq" in transfer)
+
+        if is_hdr:
+            # Afficher le sélecteur de tone mapping
+            self._hdr_tonemap_frame.grid(row=2, column=0, sticky="ew")
+
+            if is_hdr10:
+                # Allumer le bouton HDR10
+                self._hdr10_indicator.config(
+                    bg="#ff8c00",          # orange vif
+                    fg="black",
+                    relief="raised"
+                )
+                self._hdr_info_label.config(
+                    text="Pipeline HDR→SDR actif",
+                    fg="#ffd54f"
+                )
+            elif "hlg" in transfer or "arib" in transfer:
+                # HDR HLG : bouton éteint, label spécifique
+                self._hdr10_indicator.config(
+                    bg=C["panel2"],
+                    fg=C["t3"],
+                    relief="ridge"
+                )
+                self._hdr_info_label.config(
+                    text="HLG détecté",
+                    fg="#ffd54f"
+                )
+            else:
+                # Autre HDR (rare) : bouton éteint
+                self._hdr10_indicator.config(
+                    bg=C["panel2"],
+                    fg=C["t3"],
+                    relief="ridge"
+                )
+                self._hdr_info_label.config(
+                    text="HDR détecté (non PQ)",
+                    fg="#ffd54f"
+                )
         else:
-            self._hdr_badge.config(
-                text="SDR — espace colorimétrique standard",
-                fg=C["t3"], bg=C["bg"])
+            # Pas de HDR : bouton éteint, masquer le sélecteur tonemap
             self._hdr_tonemap_frame.grid_remove()
+            self._hdr10_indicator.config(
+                bg=C["panel2"],
+                fg=C["t3"],
+                relief="ridge"
+            )
+            self._hdr_info_label.config(
+                text="SDR — espace standard",
+                fg=C["t3"]
+            )
 
     # ── Options affichage ─────────────────────────────────────────────────────
     def _on_tsize_change(self,*a):
