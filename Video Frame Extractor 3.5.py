@@ -37,6 +37,7 @@ DEFAULT_CONFIG = {
     "marked_files":    [],
     "hdr_tonemap":     "hable",
     "last_video_dir": "",
+    "last_output_dir": "",
 }
 
 def load_config():
@@ -1102,7 +1103,7 @@ class App(tk.Tk):
 
         # Source
         row=self._sect(inner,row,"Fichier source")
-        f=tk.Frame(inner,bg="#ffd54f"); f.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(2,4))
+        f=tk.Frame(inner,bg=C["bg"]); f.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(2,4))
         f.columnconfigure(0,weight=1); row+=1
 
         # Bouton unique : affiche le nom du fichier ou "Parcourir"
@@ -1146,22 +1147,49 @@ class App(tk.Tk):
                                 fg=C["t2"],bg=C["panel"],justify="left",
                                 anchor="w",padx=10,pady=8)
         self._info_lbl.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(0,6)); row+=1
-        HSep(inner).grid(row=row,column=0,sticky="ew",padx=PAD,pady=6); row+=1
 
-        # Dossier Extraction
+        # HSep(inner).grid(row=row,column=0,sticky="ew",padx=PAD,pady=6); row+=1
+
+        # Dossier d'Extraction
         row=self._sect(inner,row,"Dossier d'Extraction")
         f2=tk.Frame(inner,bg=C["bg"]); f2.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(2,6))
         f2.columnconfigure(0,weight=1); row+=1
-        DarkEntry(f2,textvariable=self.v_outdir).grid(row=0,column=0,sticky="ew",ipady=5,padx=(0,6))
-        DarkButton(f2,"Parcourir",self._pick_output,width=80,height=30).grid(row=0,column=1)
-        self._outdir_name_lbl=tk.Label(inner,text="—",font=F_MONO,fg=C["accent"],
-                                       bg=C["bg"],anchor="w",padx=14)
-        self._outdir_name_lbl.grid(row=row,column=0,sticky="ew",pady=(0,2)); row+=1
-        def _upd_out(*a):
-            p=self.v_outdir.get()
-            self._outdir_name_lbl.config(text=os.path.basename(p.rstrip("/\\")) if p else "—" or "—")
-        self.v_outdir.trace_add("write",_upd_out); _upd_out()
-        HSep(inner).grid(row=row,column=0,sticky="ew",padx=PAD,pady=6); row+=1
+
+        self._outdir_btn = DarkButton(
+            f2,
+            text="Parcourir",
+            command=self._pick_output,
+            style="default",
+            width=0,
+            height=32,
+            font=F_UI,
+            anchor="w",
+            padx=10,
+            fg=C["accent"]
+        )
+        self._outdir_btn.grid(row=0, column=0, sticky="ew", ipady=2)
+
+        # Mise à jour du texte du bouton en fonction de v_outdir
+        def update_outdir_btn(*args):
+            path = self.v_outdir.get()
+            if path and os.path.isdir(path):
+                name = os.path.basename(path.rstrip("/\\"))
+                if len(name) > 40:
+                    name = "…" + name[-37:]
+                self._outdir_btn.set_text(name)
+            else:
+                self._outdir_btn.set_text("Parcourir")
+        self.v_outdir.trace_add("write", update_outdir_btn)
+        update_outdir_btn()
+
+        # Tooltip instantané sur le bouton (chemin complet)
+        self._outdir_btn.bind("<Enter>", lambda e: self._show_full_tooltip(self._outdir_btn, self.v_outdir.get()))
+        self._outdir_btn.bind("<Leave>", lambda e: self._hide_tooltip())
+
+        # On supprime l'ancien label self._outdir_name_lbl (optionnel)
+        self._outdir_name_lbl = None
+
+        # HSep(inner).grid(row=row,column=0,sticky="ew",padx=PAD,pady=6); row+=1
 
         # Dossier Travail
         row=self._sect(inner,row,"Dossier de Travail")
@@ -1190,6 +1218,7 @@ class App(tk.Tk):
                                   width=240,height=30,font=F_SMALL,bg=C["bg"])
         self._copy_btn.grid(row=row,column=0,pady=(4,4),padx=PAD)
         self._copy_btn.set_state("disabled"); row+=1
+
         HSep(inner).grid(row=row,column=0,sticky="ew",padx=PAD,pady=6); row+=1
 
         # Mode capture
@@ -1570,8 +1599,14 @@ class App(tk.Tk):
             self._load_video_info(p)
 
     def _pick_output(self):
-        p=filedialog.askdirectory(title="Dossier d'Extraction")
-        if p: self.v_outdir.set(p)
+        initial = self._cfg.get("last_output_dir", "")
+        if not initial or not os.path.isdir(initial):
+            initial = os.path.expanduser("~")
+        p = filedialog.askdirectory(title="Dossier d'Extraction", initialdir=initial)
+        if p:
+            self.v_outdir.set(p)
+            self._cfg["last_output_dir"] = p
+            self._auto_save_config()
 
     def _pick_workdir(self):
         p=filedialog.askdirectory(title="Dossier de Travail")
@@ -2430,7 +2465,8 @@ class App(tk.Tk):
             "mark_key":self.v_mark_key.get(),"hdr_tonemap":self.v_hdr_tonemap.get(),
             "last_video_dir": self._cfg.get("last_video_dir", ""),
             "marked_files":[self.thumbs[i]["path"]            
-                            for i in sorted(self.marked) if i<len(self.thumbs)]
+                            for i in sorted(self.marked) if i<len(self.thumbs)],
+            "last_output_dir": self._cfg.get("last_output_dir", ""),
         })
 
     def _restore_marked(self):
@@ -2611,7 +2647,8 @@ class App(tk.Tk):
             "hdr_tonemap":self.v_hdr_tonemap.get(),
             "last_video_dir": self._cfg.get("last_video_dir", ""),
             "marked_files":[self.thumbs[i]["path"]
-                            for i in sorted(self.marked) if i<len(self.thumbs)]
+                            for i in sorted(self.marked) if i<len(self.thumbs)],
+            "last_output_dir": self._cfg.get("last_output_dir", ""),
         })
         self._prog_lbl.config(text="✔  Configuration sauvegardée")
         self.after(3000,lambda: self._prog_lbl.config(text=""))
