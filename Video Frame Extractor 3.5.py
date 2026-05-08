@@ -373,34 +373,122 @@ class DarkButton(tk.Canvas):
         "default": (C["panel2"], C["input"], C["border2"], C["t1"], C["t3"]),
         "ghost":   (C["sidebar"], C["panel"], C["panel"], C["t2"],  C["t3"]),
     }
+
     def __init__(self, parent, text="", command=None, style="default",
-                 width=130, height=32, font=None, **kw):
-        kw.setdefault("bg", parent.cget("bg"))
-        super().__init__(parent, width=width, height=height,
-                         highlightthickness=0, **kw)
-        self.text=text; self.cmd=command; self.style=style
-        self.w=width; self.h=height; self.font=font or F_UI; self._st="normal"
+                    width=130, height=32, font=None, anchor="w", padx=10, fg=None, **kw):
+            kw.setdefault("bg", parent.cget("bg"))
+            super().__init__(parent, width=width, height=height,
+                            highlightthickness=0, **kw)
+            self.full_text = text
+            self.text_display = text
+            self.cmd = command
+            self.style = style
+            self.font = font or F_UI
+            self.anchor = anchor
+            self.padx = padx
+            self.custom_fg = fg
+            self._st = "normal"
+            # Forcer une largeur minimale si width=0
+            if width == 0:
+                self.configure(width=130)  # temporaire, sera ajusté par grid
+            self.bind("<Configure>", self._on_resize)
+            self.bind("<Enter>", self._e_enter)
+            self.bind("<Leave>", self._e_leave)
+            self.bind("<ButtonPress-1>", self._e_press)
+            self.bind("<ButtonRelease-1>", self._e_release)
+            # Planifier la première mise à jour
+            self.after_idle(self._update_display)
+
+    def _on_resize(self, e):
+        self._update_display()
+
+    def _update_display(self):
+        self._update_truncated_text()
         self._draw()
-        self.bind("<Enter>",           self._e_enter)
-        self.bind("<Leave>",           self._e_leave)
-        self.bind("<ButtonPress-1>",   self._e_press)
-        self.bind("<ButtonRelease-1>", self._e_release)
-        self.bind("<Configure>",       self._on_resize)
-    def _on_resize(self, e): self.w=e.width; self.h=e.height; self._draw()
-    def _cols(self):
-        n,h,p,ft,fd=self.STYLES.get(self.style,self.STYLES["default"])
-        if self._st=="disabled": return C["panel"],fd
-        if self._st=="hover":    return h,ft
-        if self._st=="pressed":  return p,ft
-        return n,ft
+
+    def _update_truncated_text(self):
+        w = self.winfo_width()
+        if w <= 0:
+            return
+        available = w - 2 * self.padx - 10  # marge intérieure gauche et droite
+        if available <= 10:
+            self.text_display = "…"
+            return
+        # Mesure approximative
+        # Utiliser tkinter.Font pour une mesure plus précise
+        from tkinter.font import Font
+        font = Font(family=self.font[0], size=self.font[1], weight=self.font[2] if len(self.font)>2 else "normal")
+        text_width = font.measure(self.full_text)
+        if text_width <= available:
+            self.text_display = self.full_text
+        else:
+            # Troncature
+            for i in range(len(self.full_text), 0, -1):
+                candidate = self.full_text[:i] + "…"
+                if font.measure(candidate) <= available:
+                    self.text_display = candidate
+                    break
+            else:
+                self.text_display = "…"
+
+    def set_text(self, text):
+        self.full_text = text
+        self._update_display()  # recalcule et redessine
+
     def _draw(self):
-        self.delete("all"); bg,fg=self._cols()
-        r=7; w,h=self.w,self.h
-        if w<14 or h<8: return
-        pts=[r,1,w-r,1,w-1,1,w-1,r,w-1,h-r,w-1,h-1,w-r,h-1,r,h-1,1,h-1,1,h-r,1,r,1,1]
-        self.create_polygon(pts,smooth=True,fill=bg,
-                            outline=C["border"] if self.style=="default" else "")
-        self.create_text(w//2,h//2,text=self.text,fill=fg,font=self.font,anchor="center")
+        self.delete("all")
+        bg, style_fg = self._cols()
+        fg = self.custom_fg if self.custom_fg is not None else style_fg
+        r = 7
+        w = self.winfo_width()
+        h = self.winfo_height()
+        if w < 14 or h < 8:
+            return
+        pts = [r, 1, w-r, 1, w-1, 1, w-1, r, w-1, h-r, w-1, h-1,
+               w-r, h-1, r, h-1, 1, h-1, 1, h-r, 1, r, 1, 1]
+        self.create_polygon(pts, smooth=True, fill=bg,
+                            outline=C["border"] if self.style == "default" else "")
+        if self.anchor == "w":
+            x = self.padx + 5
+        elif self.anchor == "e":
+            x = w - self.padx - 5
+        else:
+            x = w // 2
+        y = h // 2
+        self.create_text(x, y, text=self.text_display, fill=fg, font=self.font, anchor=self.anchor)
+
+    def _cols(self):
+        n, h, p, ft, fd = self.STYLES.get(self.style, self.STYLES["default"])
+        if self._st == "disabled":
+            return C["panel"], fd
+        if self._st == "hover":
+            return h, ft
+        if self._st == "pressed":
+            return p, ft
+        return n, ft
+    
+    # def _draw(self):
+    #     self.delete("all")
+    #     bg, style_fg = self._cols()
+    #     fg = self.custom_fg if self.custom_fg is not None else style_fg
+    #     r = 7
+    #     w, h = self.w, self.h
+    #     if w < 14 or h < 8:
+    #         return
+    #     pts = [r, 1, w-r, 1, w-1, 1, w-1, r, w-1, h-r, w-1, h-1,
+    #            w-r, h-1, r, h-1, 1, h-1, 1, h-r, 1, r, 1, 1]
+    #     self.create_polygon(pts, smooth=True, fill=bg,
+    #                         outline=C["border"] if self.style == "default" else "")
+    #     # Calcul de la position x selon l'ancrage
+    #     if self.anchor == "w":
+    #         x = self.padx + 5   # 5 de marge supplémentaire pour ne pas toucher le bord arrondi
+    #     elif self.anchor == "e":
+    #         x = w - self.padx - 5
+    #     else:  # center
+    #         x = w // 2
+    #     y = h // 2
+    #     self.create_text(x, y, text=self.text, fill=fg, font=self.font, anchor=self.anchor)
+
     def _e_enter(self,e):
         if self._st!="disabled": self._st="hover"; self._draw(); self.config(cursor="hand2")
     def _e_leave(self,e):
@@ -414,7 +502,6 @@ class DarkButton(tk.Canvas):
     def set_state(self,st):
         self._st=st; self._draw()
         self.config(cursor="arrow" if st=="disabled" else "hand2")
-    def set_text(self,t): self.text=t; self._draw()
 
 
 class PillSelector(tk.Frame):
@@ -809,53 +896,6 @@ class App(tk.Tk):
     def _get_sash_positions(self):
         try: return int(self._pane.sash_coord(0)[0]),int(self._pane.sash_coord(1)[0])
         except Exception: return 310,700
-    
-    # def _setup_autohide_scrollbar(self, canvas, scrollbar, place_kw):
-    #     """Configure une scrollbar qui disparaît hors survol, superposée via place."""
-    #     # Appliquer le placement initial, puis cacher
-    #     scrollbar.place(**place_kw)
-    #     scrollbar.place_forget()
-    #     canvas.bind("<Enter>", lambda e: self._show_scrollbar(scrollbar, place_kw))
-    #     canvas.bind("<Leave>", lambda e: self._hide_scrollbar_later(scrollbar))
-    #     scrollbar.bind("<Enter>", lambda e: self._show_scrollbar(scrollbar, place_kw))
-    #     scrollbar.bind("<Leave>", lambda e: self._hide_scrollbar_later(scrollbar))
-
-    # def _show_scrollbar(self, scrollbar, place_kw=None):
-    #     """Affiche la scrollbar avec les mêmes paramètres de placement."""
-    #     if scrollbar in self._scrollbar_hide_jobs:
-    #         self.after_cancel(self._scrollbar_hide_jobs[scrollbar])
-    #         del self._scrollbar_hide_jobs[scrollbar]
-    #     if place_kw:
-    #         scrollbar.place(**place_kw)
-    #     else:
-    #         scrollbar.place()   # fallback
-
-    # def _hide_scrollbar_later(self, scrollbar):
-    #     """Cache la scrollbar après 300 ms via place_forget."""
-    #     if scrollbar in self._scrollbar_hide_jobs:
-    #         self.after_cancel(self._scrollbar_hide_jobs[scrollbar])
-    #     job = self.after(500, lambda: scrollbar.place_forget())
-    #     self._scrollbar_hide_jobs[scrollbar] = job
-
-    # def _show_scrollbar_grid(self, scrollbar):
-    #     """Rend le pouce visible sans toucher à la géométrie."""
-    #     if scrollbar in self._scrollbar_hide_jobs:
-    #         self.after_cancel(self._scrollbar_hide_jobs[scrollbar])
-    #         del self._scrollbar_hide_jobs[scrollbar]
-    #     scrollbar._visible = True
-    #     scrollbar._redraw()
-
-    # def _hide_scrollbar_grid_later(self, scrollbar):
-    #     """Efface le pouce après 500 ms sans toucher à la géométrie."""
-    #     if scrollbar in self._scrollbar_hide_jobs:
-    #         self.after_cancel(self._scrollbar_hide_jobs[scrollbar])
-    #     def _hide():
-    #         scrollbar._visible = False
-    #         scrollbar._redraw()
-    #     job = self.after(500, _hide)
-    #     self._scrollbar_hide_jobs[scrollbar] = job
-
-
 
     def _apply_window_size(self,size):
         self.update_idletasks()
@@ -1060,20 +1100,48 @@ class App(tk.Tk):
         self._build_info_block(inner, PAD)
         row += 1
 
-
         # Source
         row=self._sect(inner,row,"Fichier source")
-        f=tk.Frame(inner,bg=C["bg"]); f.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(2,4))
+        f=tk.Frame(inner,bg="#ffd54f"); f.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(2,4))
         f.columnconfigure(0,weight=1); row+=1
-        DarkEntry(f,textvariable=self.v_path).grid(row=0,column=0,sticky="ew",ipady=5,padx=(0,6))
-        DarkButton(f,"Parcourir",self._pick_video,width=80,height=30).grid(row=0,column=1)
-        self._src_name_lbl=tk.Label(inner,text="—",font=F_MONO,fg=C["accent"],
-                                    bg=C["bg"],anchor="w",padx=14)
-        self._src_name_lbl.grid(row=row,column=0,sticky="ew",pady=(0,2)); row+=1
-        def _upd_src(*a):
-            p=self.v_path.get()
-            self._src_name_lbl.config(text=os.path.basename(p) if p else "—")
-        self.v_path.trace_add("write",_upd_src); _upd_src()
+
+        # Bouton unique : affiche le nom du fichier ou "Parcourir"
+        self._src_btn = DarkButton(
+            f,
+            text="Parcourir",
+            command=self._pick_video,
+            style="default",
+            # width=0,   # à supprimer
+            height=32,
+            font=F_UI,
+            anchor="w",
+            padx=10,
+            fg=C["accent"]
+        )
+        self._src_btn.grid(row=0, column=0, sticky="ew", ipady=2)
+
+        # Liaison du tooltip
+        self._src_btn.bind("<Enter>", lambda e: self._show_full_tooltip(self._src_btn, self.v_path.get()))
+        self._src_btn.bind("<Leave>", lambda e: self._hide_tooltip())       
+
+        # Mise à jour du texte du bouton quand v_path change
+        def update_src_btn(*args):
+            path = self.v_path.get()
+            if path and os.path.exists(path):
+                name = os.path.basename(path)
+                # Tronquer si trop long (optionnel)
+                if len(name) > 40:
+                    name = "…" + name[-37:]
+                self._src_btn.set_text(name)
+            else:
+                self._src_btn.set_text("Parcourir")
+        self.v_path.trace_add("write", update_src_btn)
+        update_src_btn()   # initialisation
+
+        # On supprime l'ancien label self._src_name_lbl – il n'existe plus
+        # Pour éviter une erreur si une autre méthode y fait référence, on peut le définir à None
+        self._src_name_lbl = None
+
         self._info_lbl=tk.Label(inner,text="Aucun fichier chargé",font=F_MONO,
                                 fg=C["t2"],bg=C["panel"],justify="left",
                                 anchor="w",padx=10,pady=8)
@@ -1382,6 +1450,55 @@ class App(tk.Tk):
         if not key: return
         bid=self.bind(f"<KeyPress-{key}>",self._on_mark_key,add=True)
         self._mark_binding_id=(f"<KeyPress-{key}>",bid)
+
+    def _show_full_tooltip(self, widget, text):
+        """Affiche un tooltip immédiat avec le texte complet, fond gris, coins arrondis."""
+        if not text:
+            return
+        # Supprimer l'ancien tooltip s'il existe
+        if hasattr(self, '_tooltip_win') and self._tooltip_win:
+            self._tooltip_win.destroy()
+        # Créer une fenêtre Toplevel
+        win = tk.Toplevel(widget)
+        win.wm_overrideredirect(True)   # pas de bordure de fenêtre
+        win.wm_attributes("-topmost", True)
+        # Fond gris
+        bg_color = C["panel2"]   # gris foncé
+        fg_color = C["t1"]       # texte clair
+        # Conception avec Canvas pour les coins arrondis
+        pad = 8
+        # Calculer la taille nécessaire
+        temp_label = tk.Label(win, text=text, font=F_SMALL, bg=bg_color, fg=fg_color)
+        temp_label.pack()
+        win.update_idletasks()
+        width = temp_label.winfo_reqwidth() + 2 * pad
+        height = temp_label.winfo_reqheight() + 2 * pad
+        temp_label.destroy()
+        win.geometry(f"{width}x{height}")
+        # Canvas arrondi
+        canvas = tk.Canvas(win, width=width, height=height, highlightthickness=0, bg=bg_color)
+        canvas.pack()
+        r = 8
+        # Dessiner un rectangle aux coins arrondis
+        canvas.create_rounded_rect = lambda x1,y1,x2,y2,r,**kw: canvas.create_polygon(
+            (x1+r,y1, x2-r,y1, x2,y1, x2,y1+r, x2,y2-r, x2,y2,
+            x2-r,y2, x1+r,y2, x1,y2, x1,y2-r, x1,y1+r, x1,y1),
+            smooth=True, **kw)
+        canvas.create_rounded_rect(0, 0, width, height, r, fill=bg_color, outline="")
+        # Ajouter le texte
+        canvas.create_text(width//2, height//2, text=text, font=F_SMALL,
+                        fill=fg_color, anchor="center")
+        # Positionner sous la souris (légèrement décalé)
+        x = widget.winfo_rootx() + 10
+        y = widget.winfo_rooty() + widget.winfo_height() + 5
+        win.geometry(f"+{x}+{y}")
+        self._tooltip_win = win
+
+    def _hide_tooltip(self):
+        """Détruit le tooltip."""
+        if hasattr(self, '_tooltip_win') and self._tooltip_win:
+            self._tooltip_win.destroy()
+            self._tooltip_win = None
 
     def _scroll_universal(self, e):
         # Canvas central
