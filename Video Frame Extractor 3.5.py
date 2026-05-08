@@ -71,6 +71,7 @@ C = {
     "danger":    "#f48771",
     "danger_dk": "#a83225",
     "ok":        "#89d185",
+    "info_bg":   "#2a2a2a",    # fond du bloc d'infos, très légèrement plus clair que bg
     "t1":        "#d4d4d4",
     "t2":        "#9d9d9d",
     "t3":        "#6e6e6e",
@@ -954,15 +955,16 @@ class App(tk.Tk):
         self._hdr_badge.grid(row=row,column=0,sticky="ew"); row+=1
 
         # Sélecteur tone mapping (masqué par défaut, visible si HDR détecté)
-        self._hdr_tonemap_frame=tk.Frame(inner,bg="#1e1800")
+        self._hdr_tonemap_frame=tk.Frame(inner,bg=C["bg"])
         self._hdr_tonemap_frame.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(0,4))
         self._hdr_tonemap_frame.columnconfigure(0,weight=1)
         self._hdr_tonemap_frame.grid_remove()
         row+=1
-        tk.Label(self._hdr_tonemap_frame,text="Tone mapping HDR→SDR :",
-                 font=F_SMALL,fg="#ffd54f",bg="#1e1800",anchor="w",padx=4
-                 ).grid(row=0,column=0,sticky="w",pady=(4,2))
-        tm_row=tk.Frame(self._hdr_tonemap_frame,bg="#1e1800")
+
+        tk.Label(self._hdr_tonemap_frame,text="Tone mapping HDR→SDR :", font=F_SMALL,fg="#ffd54f",
+                 bg=C["bg"],anchor="w",padx=4).grid(row=0,column=0,sticky="w",pady=(4,2))
+        
+        tm_row=tk.Frame(self._hdr_tonemap_frame,bg=C["bg"])
         tm_row.grid(row=1,column=0,sticky="w",padx=4,pady=(0,6))
         for algo,label,tip in [
             ("hable",   "Hable",    "Doux, cinématique — recommandé"),
@@ -970,21 +972,19 @@ class App(tk.Tk):
             ("reinhard","Reinhard", "Simple et rapide"),
         ]:
             rb=tk.Radiobutton(tm_row,text=f"{label}",variable=self.v_hdr_tonemap,
-                              value=algo,bg="#1e1800",fg="#ffd54f",
-                              selectcolor="#332b00",activebackground="#1e1800",
-                              activeforeground="#fff",font=F_SMALL,cursor="hand2",
-                              indicatoron=1)
+                  value=algo,bg=C["bg"],fg="#ffd54f",
+                  selectcolor=C["accent_bg"],activebackground=C["bg"],
+                  activeforeground="#fff",font=F_SMALL,cursor="hand2",
+                  indicatoron=1)
             rb.pack(side="left",padx=(0,8))
             Tooltip(rb,lambda t=tip: t)
 
         tk.Label(self._hdr_tonemap_frame,
-                 text="  ℹ  Requiert ffmpeg avec libzimg (zscale).\n"
-                      "  Fallback automatique si non disponible.",
-                 font=("Segoe UI",8),fg="#a09060",bg="#1e1800",
-                 anchor="w",padx=4,justify="left"
-                 ).grid(row=2,column=0,sticky="w",pady=(0,4))
+         text="  ℹ  Requiert ffmpeg avec libzimg (zscale).\n"
+              "  Fallback automatique si non disponible.",
+         font=("Segoe UI",8),fg="#a09060",bg=C["bg"],
+         anchor="w",padx=4,justify="left")
 
-        HSep(inner).grid(row=row,column=0,sticky="ew",padx=PAD,pady=4); row+=1
 
         # Source
         row=self._sect(inner,row,"Fichier source")
@@ -1388,8 +1388,8 @@ class App(tk.Tk):
             if "2084" in tf or "pq" in tf:   label = "HDR10 (PQ)"
             elif "hlg" in tf or "arib" in tf: label = "HDR HLG"
             self._hdr_badge.config(
-                text=f"🌟  {label} détecté — pipeline HDR→SDR actif",
-                fg="#ffd54f", bg="#2a2200")
+                text=f"{label} détecté — pipeline HDR→SDR actif",
+                fg="#ffd54f", bg=C["bg"])
             self._hdr_tonemap_frame.grid()   # affiche le sélecteur
         else:
             self._hdr_badge.config(
