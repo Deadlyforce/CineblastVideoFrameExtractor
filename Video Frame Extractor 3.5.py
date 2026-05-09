@@ -1489,6 +1489,88 @@ class App(tk.Tk):
         self.bind_all("<Button-5>",  self._scroll_universal)
         self._mark_binding_id=None; self._rebind_mark_key()
         self.bind_all("<ButtonPress-1>",self._global_click_deselect,add="+")
+        self.bind("<Left>",  self._on_arrow_key)
+        self.bind("<Right>", self._on_arrow_key)
+        self.bind("<Up>",    self._on_arrow_key)
+        self.bind("<Down>",  self._on_arrow_key)
+
+    def _on_arrow_key(self, event):
+        # Ne pas interférer si le focus est dans un champ texte
+        fw = self.focus_get()
+        if isinstance(fw, (tk.Entry, DarkEntry)):
+            return
+
+        if not self.thumbs:
+            return
+
+        cols = self.v_cols.get()
+        total = len(self.thumbs)
+
+        # Déterminer l'index de départ
+        if len(self.sel) == 1:
+            current = next(iter(self.sel))
+        elif not self.sel:
+            # Rien de sélectionné : on commence à 0
+            current = -1
+        else:
+            # Sélection multiple : on prend le dernier cliqué
+            current = self._last_click_idx if self._last_click_idx is not None else min(self.sel)
+
+        # Calculer le nouvel index
+        if event.keysym == "Right":
+            new = current + 1
+        elif event.keysym == "Left":
+            new = current - 1
+        elif event.keysym == "Down":
+            new = current + cols
+        elif event.keysym == "Up":
+            new = current - cols
+        else:
+            return
+
+        # Rester dans les bornes
+        new = max(0, min(new, total - 1))
+        if new == current:
+            return
+
+        # Appliquer la sélection
+        for i in list(self.sel):
+            self._set_sel(i, False)
+        self.sel.clear()
+        self.sel.add(new)
+        self._set_sel(new, True)
+        self._last_click_idx = new
+        self._upd_badges()
+        self._show_preview(new)
+
+        # Scroller pour que la vignette soit visible
+        self._scroll_to_thumb(new)
+
+
+    def _scroll_to_thumb(self, idx):
+        """Fait défiler le canvas central pour que la vignette idx soit visible."""
+        if idx not in self.thumb_wids:
+            return
+        cell = self.thumb_wids[idx]["frame"]
+        try:
+            self._cv.update_idletasks()
+            total_h = self._cv.bbox("all")[3]
+            if not total_h:
+                return
+
+            # Position absolue de la cellule dans le canvas (via winfo_rooty)
+            cell_top    = cell.winfo_rooty() - self._cv.winfo_rooty() + self._cv.canvasy(0)
+            cell_bottom = cell_top + cell.winfo_height()
+            canvas_h    = self._cv.winfo_height()
+            scroll_top  = self._cv.canvasy(0)
+            scroll_bot  = scroll_top + canvas_h
+
+            if cell_top < scroll_top:
+                self._cv.yview_moveto(cell_top / total_h)
+            elif cell_bottom > scroll_bot:
+                self._cv.yview_moveto((cell_bottom - canvas_h) / total_h)
+        except Exception:
+            pass
 
     def _global_click_deselect(self,event):
         if not self.sel: return
@@ -2515,9 +2597,20 @@ class App(tk.Tk):
         self._upd_marked_badge(); self._auto_save_config()
 
     def _mark_selection(self):
-        if not self.sel: self._status("⚠  Aucune image sélectionnée."); return
-        for idx in list(self.sel): self.marked.add(idx); self._update_mark_overlay(idx)
-        self._upd_marked_badge(); self._auto_save_config()
+        if not self.sel:
+            self._status("⚠  Aucune image sélectionnée.")
+            return
+        # Si toutes les sélectionnées sont déjà marquées → démarquer
+        if self.sel.issubset(self.marked):
+            for idx in list(self.sel):
+                self.marked.discard(idx)
+                self._update_mark_overlay(idx)
+        else:
+            for idx in list(self.sel):
+                self.marked.add(idx)
+                self._update_mark_overlay(idx)
+        self._upd_marked_badge()
+        self._auto_save_config()
 
     def _upd_marked_badge(self):
         n=len(self.marked)
