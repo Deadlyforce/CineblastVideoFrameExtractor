@@ -12,6 +12,7 @@ from tkinter import ttk, filedialog, messagebox
 import cv2
 import numpy as np
 from PIL import Image, ImageTk
+import io
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Config
@@ -1977,37 +1978,58 @@ class App(tk.Tk):
             self._status("✔  Aucune frame noire détectée.",duration=6000)
 
     # ── Grille vignettes ──────────────────────────────────────────────────────
-    def _add_thumb(self,idx):
-        entry=self.thumbs[idx]; sz=self.v_tsize.get(); cols=self.v_cols.get()
-        th=entry["img"].copy(); th.thumbnail((sz,sz),Image.LANCZOS)
-        imgtk=ImageTk.PhotoImage(th); self.thumb_refs.append(imgtk)
-        ri,ci=divmod(idx,cols)
-        cell=tk.Frame(self._gf,bg=C["thumb_bg"],padx=4,pady=4,cursor="hand2")
-        cell.grid(row=ri,column=ci,padx=5,pady=5)
-        lbl=tk.Label(cell,image=imgtk,bg=C["thumb_bg"],bd=0,relief="flat",
-                     cursor="hand2",highlightthickness=2,
-                     highlightbackground=C["thumb_bg"],highlightcolor=C["thumb_bg"])
-        lbl.image=imgtk; lbl.pack()
-        tclbl=tk.Label(cell,text=hms(entry["tc"]),font=("Segoe UI",8),
-                       fg=C["t3"],bg=C["thumb_bg"]); tclbl.pack()
-        app=self
-        
-        # Stockage de l'index sur chaque widget pour les callbacks
+    def _add_thumb(self, idx):
+        entry = self.thumbs[idx]
+        sz = self.v_tsize.get()
+        cols = self.v_cols.get()
+
+        th = entry["img"].copy()
+        th.thumbnail((sz, sz), Image.LANCZOS)
+
+        # ── Composite de l'icône si marquée ───────────────────────────────────
+        if idx in self.marked:
+            if not hasattr(self, '_cached_check_pil'):
+                self._cached_check_pil = self._make_check_icon(size=22)
+
+            ICON_SIZE = 22
+            icon = self._cached_check_pil
+            th_rgba = th.convert("RGBA")
+            x = th_rgba.width - ICON_SIZE - 2
+            y = 2
+            th_rgba.paste(icon, (x, y), icon)
+            th = th_rgba.convert("RGB")
+
+        imgtk = ImageTk.PhotoImage(th)
+        self.thumb_refs.append(imgtk)
+
+        ri, ci = divmod(idx, cols)
+        cell = tk.Frame(self._gf, bg=C["thumb_bg"], padx=4, pady=4, cursor="hand2")
+        cell.grid(row=ri, column=ci, padx=5, pady=5)
+
+        lbl = tk.Label(cell, image=imgtk, bg=C["thumb_bg"], bd=0, relief="flat",
+                    cursor="hand2", highlightthickness=2,
+                    highlightbackground=C["thumb_bg"], highlightcolor=C["thumb_bg"])
+        lbl.image = imgtk
+        lbl.pack()
+
+        tclbl = tk.Label(cell, text=hms(entry["tc"]), font=("Segoe UI", 8),
+                        fg=C["t3"], bg=C["thumb_bg"])
+        tclbl.pack()
+
         for w in (cell, lbl, tclbl):
             w._idx = idx
 
-        # Liaison des événements via des méthodes dédiées
         for w in (cell, lbl, tclbl):
-            w.bind("<ButtonPress-1>",   self._on_thumb_press)
-            w.bind("<Button-1>",        self._on_thumb_button1)
-            w.bind("<Control-Button-1>",self._on_thumb_ctrl_click)
-            w.bind("<Shift-Button-1>",  self._on_thumb_shift_click)
-            w.bind("<B1-Motion>",       self._on_thumb_motion)
-            w.bind("<ButtonRelease-1>", self._on_thumb_release)
-            w.bind("<Enter>",           self._on_thumb_enter)
-            w.bind("<Leave>",           self._on_thumb_leave)
+            w.bind("<ButtonPress-1>",    self._on_thumb_press)
+            w.bind("<Button-1>",         self._on_thumb_button1)
+            w.bind("<Control-Button-1>", self._on_thumb_ctrl_click)
+            w.bind("<Shift-Button-1>",   self._on_thumb_shift_click)
+            w.bind("<B1-Motion>",        self._on_thumb_motion)
+            w.bind("<ButtonRelease-1>",  self._on_thumb_release)
+            w.bind("<Enter>",            self._on_thumb_enter)
+            w.bind("<Leave>",            self._on_thumb_leave)
 
-        self.thumb_wids[idx]={"frame":cell,"label":lbl,"tc_lbl":tclbl}
+        self.thumb_wids[idx] = {"frame": cell, "label": lbl, "tc_lbl": tclbl}
         self._adjust_center_width()
 
         if not getattr(self, '_loading_thumbs', False):
@@ -2394,42 +2416,56 @@ class App(tk.Tk):
             for idx in self.sel: self.marked.add(idx); self._update_mark_overlay(idx)
         self._upd_marked_badge(); self._auto_save_config()
 
-    def _update_mark_overlay(self,idx):
-        if idx not in self.thumb_wids: return
-        w=self.thumb_wids[idx]; cell=w["frame"]; lbl=w["label"]; marked=idx in self.marked
-        ov=w.get("mark_overlay")
-        if ov:
-            try: ov.destroy()
-            except Exception: pass
-            w["mark_overlay"]=None
-        if not marked: return
-        SIDE=22
-        ov=tk.Canvas(cell,width=SIDE,height=SIDE,
-                     bg=C["thumb_sel"] if idx in self.sel else C["thumb_bg"],
-                     highlightthickness=0)
-        r=5
-        pts=[r,1,SIDE-r,1,SIDE-1,1,SIDE-1,r,SIDE-1,SIDE-r,SIDE-1,SIDE-1,
-             SIDE-r,SIDE-1,r,SIDE-1,1,SIDE-1,1,SIDE-r,1,r,1,1]
-        ov.create_polygon(pts,smooth=True,fill="#1a6b3a",outline="#14532d")
-        m=SIDE//2
-        ov.create_line(4,m,8,SIDE-5,fill="white",width=2,capstyle="round",joinstyle="round")
-        ov.create_line(8,SIDE-5,SIDE-4,5,fill="white",width=2,capstyle="round",joinstyle="round")
-        w["mark_overlay"]=ov
-        def _place(e=None,_ov=ov,_lbl=lbl,_SIDE=SIDE):
-            try:
-                if not _ov.winfo_exists() or not _lbl.winfo_exists(): return
-                _ov.place(x=_lbl.winfo_x()+_lbl.winfo_width()-_SIDE-2,y=_lbl.winfo_y()+2)
-                _ov.lift()
-            except Exception: pass
-        lbl.bind("<Configure>",_place,add="+"); cell.bind("<Configure>",_place,add="+")
-        self.after(10,_place)
-        ov.bind("<Button-1>",lambda e,i=idx: self._toggle_mark(i))
-        def _sync(on,_ov=ov,_idx=idx):
-            try:
-                if not _ov.winfo_exists(): return
-                _ov.config(bg=C["thumb_sel"] if _idx in self.sel else C["thumb_bg"])
-            except Exception: pass
-        w["mark_sync"]=_sync
+    def _make_check_icon(self, size=22):
+        """Génère l'icône programmatiquement : carré arrondi gris + coche orange."""
+        from PIL import ImageDraw
+        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))  # fond 100% transparent
+        draw = ImageDraw.Draw(img)
+
+        # Carré arrondi gris moyen semi-opaque
+        r = 4
+        box = [1, 1, size - 2, size - 2]
+        draw.rounded_rectangle(box, radius=r, fill=(30, 30, 30, 255))
+
+        # Coche orange
+        orange = (255, 140, 0, 255)
+        m = size / 22
+        pts = [
+            (4 * m,  11 * m),
+            (9 * m,  16 * m),
+            (18 * m,  6 * m),
+        ]
+        draw.line(pts, fill=orange, width=max(2, int(2.5 * m)))
+
+        return img
+
+    def _update_mark_overlay(self, idx):
+        """Recrée la vignette avec ou sans icône composite selon l'état marqué."""
+        if idx not in self.thumb_wids:
+            return
+        w = self.thumb_wids[idx]
+        entry = self.thumbs[idx]
+        sz = self.v_tsize.get()
+
+        th = entry["img"].copy()
+        th.thumbnail((sz, sz), Image.LANCZOS)
+
+        if idx in self.marked:
+            if not hasattr(self, '_cached_check_pil'):
+                self._cached_check_pil = self._make_check_icon(size=22)
+
+            ICON_SIZE = 22
+            icon = self._cached_check_pil
+            th_rgba = th.convert("RGBA")
+            x = th_rgba.width - ICON_SIZE - 2
+            y = 2
+            th_rgba.paste(icon, (x, y), icon)
+            th = th_rgba.convert("RGB")
+
+        imgtk = ImageTk.PhotoImage(th)
+        self.thumb_refs[idx] = imgtk
+        w["label"].config(image=imgtk)
+        w["label"].image = imgtk
 
     def _toggle_mark(self,idx):
         if idx in self.marked: self.marked.discard(idx)
