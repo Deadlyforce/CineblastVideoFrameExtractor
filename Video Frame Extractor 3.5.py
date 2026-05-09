@@ -1170,8 +1170,8 @@ class App(tk.Tk):
             if path and os.path.exists(path):
                 name = os.path.basename(path)
                 # Tronquer si trop long (optionnel)
-                if len(name) > 40:
-                    name = "…" + name[-37:]
+                # if len(name) > 40:
+                #     name = "…" + name[-37:]
                 self._src_btn.set_text(name)
             else:
                 self._src_btn.set_text("Parcourir")
@@ -1234,15 +1234,34 @@ class App(tk.Tk):
         row=self._sect(inner,row,"Dossier de Travail")
         f3=tk.Frame(inner,bg=C["bg"]); f3.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(2,6))
         f3.columnconfigure(0,weight=1); row+=1
-        DarkEntry(f3,textvariable=self.v_workdir).grid(row=0,column=0,sticky="ew",ipady=5,padx=(0,6))
-        DarkButton(f3,"Parcourir",self._pick_workdir,width=80,height=30).grid(row=0,column=1)
-        self._workdir_name_lbl=tk.Label(inner,text="—",font=F_MONO,fg=C["accent"],
-                                        bg=C["bg"],anchor="w",padx=14)
-        self._workdir_name_lbl.grid(row=row,column=0,sticky="ew",pady=(0,2)); row+=1
-        def _upd_wk(*a):
-            p=self.v_workdir.get()
-            self._workdir_name_lbl.config(text=os.path.basename(p.rstrip("/\\")) if p else "—" or "—")
-        self.v_workdir.trace_add("write",_upd_wk); _upd_wk()
+
+        self._workdir_btn = DarkButton(
+            f3,
+            text="Parcourir",
+            command=self._pick_workdir,
+            style="default",
+            width=0,
+            height=32,
+            font=F_UI,
+            anchor="w",
+            padx=10,
+            fg=C["accent"]
+        )
+        self._workdir_btn.grid(row=0, column=0, sticky="ew", ipady=2)
+
+        def update_workdir_btn(*args):
+            p = self.v_workdir.get()
+            if p and os.path.isdir(p):
+                self._workdir_btn.set_text(os.path.basename(p.rstrip("/\\")))
+            else:
+                self._workdir_btn.set_text("Parcourir")
+        self.v_workdir.trace_add("write", update_workdir_btn)
+        update_workdir_btn()
+
+        self._workdir_btn.bind("<Enter>", lambda e: self._show_full_tooltip(self._workdir_btn, self.v_workdir.get()))
+        self._workdir_btn.bind("<Leave>", lambda e: self._hide_tooltip())
+
+        self._workdir_name_lbl = None
 
         # Nom générique (déplacé ici, sous le dossier de travail)
         row=self._sect(inner,row,"Renommer les fichiers à déplacer")
@@ -2382,6 +2401,23 @@ class App(tk.Tk):
                 self.thumb_wids[idx]["frame"].destroy()
                 del self.thumb_wids[idx]
 
+        # Calculer l'index à sélectionner après suppression
+        deleted_indices = sorted(self.sel)
+        min_deleted = min(deleted_indices)
+        new_sel_idx = None
+        # Chercher le premier index non supprimé après la sélection
+        for i in range(min_deleted, len(self.thumbs)):
+            if i not in self.sel:
+                # Calculer son futur index après renumérotation
+                new_sel_idx = i - sum(1 for d in deleted_indices if d < i)
+                break
+        if new_sel_idx is None:
+            # Pas d'image après → chercher avant
+            for i in range(min_deleted - 1, -1, -1):
+                if i not in self.sel:
+                    new_sel_idx = i - sum(1 for d in deleted_indices if d < i)
+                    break
+
         self.sel.clear()
 
         # Si tout a été supprimé, on réinitialise tout
@@ -2418,7 +2454,17 @@ class App(tk.Tk):
         self._upd_marked_badge()
         self._prev_lbl.config(image="")
         self._prev_ref = None
-        self._prev_info.config(text="Cliquez sur une\nvignette…")
+
+        if new_sel_idx is not None and new_sel_idx < len(self.thumbs):
+            self.sel.add(new_sel_idx)
+            self._set_sel(new_sel_idx, True)
+            self._last_click_idx = new_sel_idx
+            self._upd_badges()
+            self._show_preview(new_sel_idx)
+            self._scroll_to_thumb(new_sel_idx)
+        else:
+            self._prev_info.config(text="Cliquez sur une\nvignette…")
+
         self._auto_save_config()
 
     def _clear_output_dir(self):
