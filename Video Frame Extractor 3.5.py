@@ -39,6 +39,7 @@ DEFAULT_CONFIG = {
     "hdr_tonemap":     "hable",
     "last_video_dir": "",
     "last_output_dir": "",
+    "window_h": 1080,
 }
 
 def load_config():
@@ -865,20 +866,29 @@ class App(tk.Tk):
 
         self.minsize(LEFT_MIN_W+400,560)
         setup_style(self)
-        self._apply_window_size(self.v_winsize.get())
+        self._apply_window_size(self.v_winsize.get())  # ← garde pour centrage initial
         self._build_ui()
         self._bind_events()
-        self.after(80,self._restore_sashes)
+
+        # Géométrie précise depuis la config, sashes inclus — synchrone
+        self._apply_initial_geometry()
+
+        # _loading_thumbs actif dès maintenant pour bloquer _fit_window
+        self._loading_thumbs = True
 
         if self.v_path.get() and os.path.exists(self.v_path.get()):
             self._load_video_info(self.v_path.get())
         else:
             self._update_derived()
 
+        # Chargement des images en dernier, après que l'UI est stable
         if self.v_outdir.get() and os.path.isdir(self.v_outdir.get()):
-            self.after(150,self._reload_extraction_folder)
+            self.after(300, self._reload_extraction_folder)
+        else:
+            # Pas d'images à charger : on libère le flag immédiatement
+            self._loading_thumbs = False
 
-        self._scrollbar_hide_jobs = {}   # pour gérer l'auto-hide
+        self._scrollbar_hide_jobs = {}
 
     def _update_refresh_btn_state(self):
         if not hasattr(self, '_refresh_btn'):
@@ -909,6 +919,34 @@ class App(tk.Tk):
             except ValueError: w,h=1280,800
         self.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
 
+    def _apply_initial_geometry(self):
+        """Applique la géométrie initiale depuis la config, sans attendre les images."""
+        # Calcul des besoins en largeur
+        col_count  = int(self._cfg.get("col_count",  4))
+        thumb_size = int(self._cfg.get("thumb_size", 150))
+        preview_size = int(self._cfg.get("preview_size", 280))
+        sash_left  = int(self._cfg.get("sash_left",  310))
+        sash_right = int(self._cfg.get("sash_right", 700))
+
+        center_need = col_count * (thumb_size + 22) + 26
+        right_need  = preview_size + 36
+
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        win_w = min(sash_left + center_need + right_need + 14, sw - 40)
+        win_h = int(self._cfg.get("window_h", 1080))
+        cx = (sw - win_w) // 2
+        cy = (sh - win_h) // 2
+
+        self.geometry(f"{win_w}x{win_h}+{cx}+{cy}")
+        self.update_idletasks()
+
+        # Appliquer les sashes maintenant que la fenêtre est rendue
+        try:
+            self._pane.sash_place(0, sash_left,  0)
+            self._pane.sash_place(1, sash_right, 0)
+        except Exception:
+            pass
+        self.update_idletasks()
 
     # ── Build UI ──────────────────────────────────────────────────────────────
     def _build_ui(self):
@@ -2503,6 +2541,7 @@ class App(tk.Tk):
             "marked_files":[self.thumbs[i]["path"]            
                             for i in sorted(self.marked) if i<len(self.thumbs)],
             "last_output_dir": self._cfg.get("last_output_dir", ""),
+            "window_h": self.winfo_height(),
         })
 
     def _restore_marked(self):
@@ -2685,6 +2724,7 @@ class App(tk.Tk):
             "marked_files":[self.thumbs[i]["path"]
                             for i in sorted(self.marked) if i<len(self.thumbs)],
             "last_output_dir": self._cfg.get("last_output_dir", ""),
+            "window_h": self.winfo_height(),
         })
         self._prog_lbl.config(text="✔  Configuration sauvegardée")
         self.after(3000,lambda: self._prog_lbl.config(text=""))
