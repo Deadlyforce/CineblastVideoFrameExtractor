@@ -448,9 +448,13 @@ class DarkButton(tk.Canvas):
         if w < 14 or h < 8:
             return
         pts = [r, 1, w-r, 1, w-1, 1, w-1, r, w-1, h-r, w-1, h-1,
-               w-r, h-1, r, h-1, 1, h-1, 1, h-r, 1, r, 1, 1]
-        self.create_polygon(pts, smooth=True, fill=bg,
-                            outline=C["border"] if self.style == "default" else "")
+            w-r, h-1, r, h-1, 1, h-1, 1, h-r, 1, r, 1, 1]
+        # Fond
+        self.create_polygon(pts, smooth=True, fill=bg, outline="")
+        # Bordure
+        if self.style == "default":
+            border_color = C["accent"] if self._st in ("hover", "pressed") else C["border"]
+            self.create_polygon(pts, smooth=True, fill="", outline=border_color, width=1)
         if self.anchor == "w":
             x = self.padx + 5
         elif self.anchor == "e":
@@ -469,31 +473,9 @@ class DarkButton(tk.Canvas):
         if self._st == "pressed":
             return p, ft
         return n, ft
-    
-    # def _draw(self):
-    #     self.delete("all")
-    #     bg, style_fg = self._cols()
-    #     fg = self.custom_fg if self.custom_fg is not None else style_fg
-    #     r = 7
-    #     w, h = self.w, self.h
-    #     if w < 14 or h < 8:
-    #         return
-    #     pts = [r, 1, w-r, 1, w-1, 1, w-1, r, w-1, h-r, w-1, h-1,
-    #            w-r, h-1, r, h-1, 1, h-1, 1, h-r, 1, r, 1, 1]
-    #     self.create_polygon(pts, smooth=True, fill=bg,
-    #                         outline=C["border"] if self.style == "default" else "")
-    #     # Calcul de la position x selon l'ancrage
-    #     if self.anchor == "w":
-    #         x = self.padx + 5   # 5 de marge supplémentaire pour ne pas toucher le bord arrondi
-    #     elif self.anchor == "e":
-    #         x = w - self.padx - 5
-    #     else:  # center
-    #         x = w // 2
-    #     y = h // 2
-    #     self.create_text(x, y, text=self.text, fill=fg, font=self.font, anchor=self.anchor)
 
-    def _e_enter(self,e):
-        if self._st!="disabled": self._st="hover"; self._draw(); self.config(cursor="hand2")
+    def _e_enter(self, e):
+        if self._st != "disabled": self._st = "hover"; self._draw(); self.config(cursor="hand2")
     def _e_leave(self,e):
         if self._st!="disabled": self._st="normal"; self._draw()
     def _e_press(self,e):
@@ -866,7 +848,6 @@ class App(tk.Tk):
 
         self.minsize(LEFT_MIN_W+400,560)
         setup_style(self)
-        self._apply_window_size(self.v_winsize.get())  # ← garde pour centrage initial
         self._build_ui()
         self._bind_events()
 
@@ -935,9 +916,11 @@ class App(tk.Tk):
         win_w = min(sash_left + center_need + right_need + 14, sw - 40)
         win_h = int(self._cfg.get("window_h", 1080))
         cx = (sw - win_w) // 2
-        cy = (sh - win_h) // 2
-
+        # Position Y : si une position a déjà été appliquée, la conserver
+        self.update_idletasks()
+        cy = self.winfo_y() if self.winfo_y() > 0 else (sh - win_h) // 2
         self.geometry(f"{win_w}x{win_h}+{cx}+{cy}")
+
         self.update_idletasks()
 
         # Appliquer les sashes maintenant que la fenêtre est rendue
@@ -1151,7 +1134,6 @@ class App(tk.Tk):
             text="Parcourir",
             command=self._pick_video,
             style="default",
-            # width=0,   # à supprimer
             height=32,
             font=F_UI,
             anchor="w",
@@ -1160,26 +1142,20 @@ class App(tk.Tk):
         )
         self._src_btn.grid(row=0, column=0, sticky="ew", ipady=2)
 
-        # Liaison du tooltip
-        self._src_btn.bind("<Enter>", lambda e: self._show_full_tooltip(self._src_btn, self.v_path.get()))
-        self._src_btn.bind("<Leave>", lambda e: self._hide_tooltip())       
+        # Liaison du tooltip — src seulement ici
+        self._src_btn.bind("<Enter>", lambda e: self._show_full_tooltip(self._src_btn, self.v_path.get()), add="+")
+        self._src_btn.bind("<Leave>", lambda e: self._hide_tooltip(), add="+")
 
         # Mise à jour du texte du bouton quand v_path change
         def update_src_btn(*args):
             path = self.v_path.get()
             if path and os.path.exists(path):
-                name = os.path.basename(path)
-                # Tronquer si trop long (optionnel)
-                # if len(name) > 40:
-                #     name = "…" + name[-37:]
-                self._src_btn.set_text(name)
+                self._src_btn.set_text(os.path.basename(path))
             else:
                 self._src_btn.set_text("Parcourir")
         self.v_path.trace_add("write", update_src_btn)
-        update_src_btn()   # initialisation
+        update_src_btn()
 
-        # On supprime l'ancien label self._src_name_lbl – il n'existe plus
-        # Pour éviter une erreur si une autre méthode y fait référence, on peut le définir à None
         self._src_name_lbl = None
 
         self._info_lbl=tk.Label(inner,text="Aucun fichier chargé",font=F_MONO,
@@ -1187,7 +1163,7 @@ class App(tk.Tk):
                                 anchor="w",padx=10,pady=8)
         self._info_lbl.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(0,6)); row+=1
 
-        # HSep(inner).grid(row=row,column=0,sticky="ew",padx=PAD,pady=6); row+=1
+
 
         # Dossier d'Extraction
         row=self._sect(inner,row,"Dossier d'Extraction")
@@ -1212,23 +1188,19 @@ class App(tk.Tk):
         def update_outdir_btn(*args):
             path = self.v_outdir.get()
             if path and os.path.isdir(path):
-                name = os.path.basename(path.rstrip("/\\"))
-                if len(name) > 40:
-                    name = "…" + name[-37:]
-                self._outdir_btn.set_text(name)
+                self._outdir_btn.set_text(os.path.basename(path.rstrip("/\\")))
             else:
                 self._outdir_btn.set_text("Parcourir")
         self.v_outdir.trace_add("write", update_outdir_btn)
         update_outdir_btn()
 
         # Tooltip instantané sur le bouton (chemin complet)
-        self._outdir_btn.bind("<Enter>", lambda e: self._show_full_tooltip(self._outdir_btn, self.v_outdir.get()))
-        self._outdir_btn.bind("<Leave>", lambda e: self._hide_tooltip())
+        self._outdir_btn.bind("<Enter>", lambda e: self._show_full_tooltip(self._outdir_btn, self.v_outdir.get()), add="+")
+        self._outdir_btn.bind("<Leave>", lambda e: self._hide_tooltip(), add="+")
 
         # On supprime l'ancien label self._outdir_name_lbl (optionnel)
         self._outdir_name_lbl = None
 
-        # HSep(inner).grid(row=row,column=0,sticky="ew",padx=PAD,pady=6); row+=1
 
         # Dossier Travail
         row=self._sect(inner,row,"Dossier de Travail")
@@ -1258,8 +1230,8 @@ class App(tk.Tk):
         self.v_workdir.trace_add("write", update_workdir_btn)
         update_workdir_btn()
 
-        self._workdir_btn.bind("<Enter>", lambda e: self._show_full_tooltip(self._workdir_btn, self.v_workdir.get()))
-        self._workdir_btn.bind("<Leave>", lambda e: self._hide_tooltip())
+        self._workdir_btn.bind("<Enter>", lambda e: self._show_full_tooltip(self._workdir_btn, self.v_workdir.get()), add="+")
+        self._workdir_btn.bind("<Leave>", lambda e: self._hide_tooltip(), add="+")
 
         self._workdir_name_lbl = None
 
@@ -1512,6 +1484,12 @@ class App(tk.Tk):
         self.bind("<Right>", self._on_arrow_key)
         self.bind("<Up>",    self._on_arrow_key)
         self.bind("<Down>",  self._on_arrow_key)
+        self.bind("<Configure>", self._on_window_configure)
+
+    def _on_window_configure(self, event):
+        """Mémorise la hauteur de la fenêtre principale en temps réel."""
+        if event.widget is self and event.height > 100:
+            self._cfg["window_h"] = event.height
 
     def _on_arrow_key(self, event):
         # Ne pas interférer si le focus est dans un champ texte
@@ -1880,6 +1858,7 @@ class App(tk.Tk):
 
     # ── Extraction ────────────────────────────────────────────────────────────
     def _start_extraction(self):
+        self._loading_thumbs = False
         if not self.v_path.get():
             messagebox.showwarning("Attention","Veuillez choisir une vidéo."); return
         if not self.v_outdir.get():

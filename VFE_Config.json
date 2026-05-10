@@ -1,17 +1,17 @@
 {
-  "video_path": "D:/Séries TV/Alien Earth (2025)/S01/Alien.Earth.2025.S01E07.Hybrid.MULTI.2160p.WEB-DL.DV.HDR.H265-AOC.mkv",
+  "video_path": "D:/Séries TV/Alien Earth (2025)/S01/Alien.Earth.2025.S01E08.Hybrid.MULTI.2160p.WEB-DL.DV.HDR.H265-AOC.mkv",
   "output_dir": "C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/Extraction Photos Temp",
   "work_dir": "C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/2026-05-09 Alien Earth Partie 3",
   "generic_name": "AlienEarth",
   "mode": "count",
-  "count_val": 250,
+  "count_val": 50,
   "interval_val": 15,
   "thumb_size": 200,
   "col_count": 5,
   "preview_size": 650,
   "window_size": "1920x1200",
   "sash_left": 301,
-  "sash_right": 1452,
+  "sash_right": 606,
   "confirm_delete": false,
   "black_filter": true,
   "mark_key": "s",
@@ -19,5 +19,5 @@
   "last_video_dir": "D:/Séries TV/Alien Earth (2025)/S01",
   "marked_files": [],
   "last_output_dir": "C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/Extraction Photos Temp",
-  "window_h": 1226
+  "window_h": 1
 }
