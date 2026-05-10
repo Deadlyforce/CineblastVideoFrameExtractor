@@ -848,8 +848,10 @@ class App(tk.Tk):
 
         self.minsize(LEFT_MIN_W+400,560)
         setup_style(self)
+        self._geometry_ready = False
         self._build_ui()
         self._bind_events()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         # Géométrie précise depuis la config, sashes inclus — synchrone
         self._apply_initial_geometry()
@@ -901,13 +903,11 @@ class App(tk.Tk):
         self.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
 
     def _apply_initial_geometry(self):
-        """Applique la géométrie initiale depuis la config, sans attendre les images."""
-        # Calcul des besoins en largeur
-        col_count  = int(self._cfg.get("col_count",  4))
-        thumb_size = int(self._cfg.get("thumb_size", 150))
+        col_count    = int(self._cfg.get("col_count",   4))
+        thumb_size   = int(self._cfg.get("thumb_size",  150))
         preview_size = int(self._cfg.get("preview_size", 280))
-        sash_left  = int(self._cfg.get("sash_left",  310))
-        sash_right = int(self._cfg.get("sash_right", 700))
+        sash_left    = int(self._cfg.get("sash_left",   310))
+        sash_right   = int(self._cfg.get("sash_right",  700))
 
         center_need = col_count * (thumb_size + 22) + 26
         right_need  = preview_size + 36
@@ -916,20 +916,19 @@ class App(tk.Tk):
         win_w = min(sash_left + center_need + right_need + 14, sw - 40)
         win_h = int(self._cfg.get("window_h", 1080))
         cx = (sw - win_w) // 2
-        # Position Y : si une position a déjà été appliquée, la conserver
-        self.update_idletasks()
-        cy = self.winfo_y() if self.winfo_y() > 0 else (sh - win_h) // 2
+        cy = (sh - win_h) // 2
+
         self.geometry(f"{win_w}x{win_h}+{cx}+{cy}")
 
-        self.update_idletasks()
+        def _place_sashes():
+            try:
+                self._pane.sash_place(0, sash_left, 0)
+                self._pane.sash_place(1, sash_right, 0)
+            except Exception:
+                pass
 
-        # Appliquer les sashes maintenant que la fenêtre est rendue
-        try:
-            self._pane.sash_place(0, sash_left,  0)
-            self._pane.sash_place(1, sash_right, 0)
-        except Exception:
-            pass
-        self.update_idletasks()
+        self.after(50,  _place_sashes)
+        self.after(150, _place_sashes)
 
     # ── Build UI ──────────────────────────────────────────────────────────────
     def _build_ui(self):
@@ -1244,12 +1243,12 @@ class App(tk.Tk):
                  ).grid(row=0,column=1,sticky="w")
 
         self._copy_btn=DarkButton(inner,"📋  Déplacer sélection → Dossier de Travail",
-                                  self._move_to_workdir,style="accent",
-                                  width=240,height=30,font=F_SMALL,bg=C["bg"])
-        self._copy_btn.grid(row=row,column=0,pady=(4,4),padx=PAD)
+                                self._move_to_workdir,style="accent",
+                                width=0,height=30,font=F_SMALL,bg=C["bg"])
+        self._copy_btn.grid(row=row,column=0,pady=(4,4),padx=PAD,sticky="ew")
         self._copy_btn.set_state("disabled"); row+=1
 
-        HSep(inner).grid(row=row,column=0,sticky="ew",padx=PAD,pady=6); row+=1
+
 
         # Mode capture
         row=self._sect(inner,row,"Mode de capture")
@@ -1272,6 +1271,7 @@ class App(tk.Tk):
                        selectcolor=C["input"],activebackground=C["bg"],
                        activeforeground=C["t1"],font=F_SMALL,anchor="w",
                        cursor="hand2").pack(side="left")
+        
         HSep(inner).grid(row=row,column=0,sticky="ew",padx=PAD,pady=6); row+=1
 
         # Taille fenêtre
@@ -1484,12 +1484,29 @@ class App(tk.Tk):
         self.bind("<Right>", self._on_arrow_key)
         self.bind("<Up>",    self._on_arrow_key)
         self.bind("<Down>",  self._on_arrow_key)
-        self.bind("<Configure>", self._on_window_configure)
+        
+
+    # def _on_window_configure(self, event):
+    #     if not self._geometry_ready:
+    #         return
+    #     if event.widget is self and event.height > 100:
+    #         self._cfg["window_h"] = event.height
+
+    # def _on_window_configure(self, event):
+    #     if event.widget is self and event.height > 100:
+    #         import time
+    #         ready = getattr(self, '_geometry_ready', False)
+    #         print(f"[CONFIGURE] h={event.height}  ready={ready}  t={time.time():.3f}")
+    #         if ready:
+    #             self._cfg["window_h"] = event.height
 
     def _on_window_configure(self, event):
-        """Mémorise la hauteur de la fenêtre principale en temps réel."""
-        if event.widget is self and event.height > 100:
-            self._cfg["window_h"] = event.height
+        pass
+
+    def _on_close(self):
+        self._cfg["window_h"] = self.winfo_height()
+        self._auto_save_config()
+        self.destroy()
 
     def _on_arrow_key(self, event):
         # Ne pas interférer si le focus est dans un champ texte
@@ -2169,7 +2186,6 @@ class App(tk.Tk):
         except Exception:
             s0 = LEFT_MIN_W
 
-        # ── Pendant le chargement : sash droit seulement, pas de geometry() ──
         if getattr(self, '_loading_thumbs', False):
             try:
                 self._pane.paneconfig(self._cf, minsize=center_need)
@@ -2178,15 +2194,16 @@ class App(tk.Tk):
                 pass
             return
 
-        # ── Comportement normal hors chargement ──
-        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        sw = self.winfo_screenwidth()
         win_target = min(max(s0 + center_need + right_need + SASH_W * 2 + 4,
                             LEFT_MIN_W + 300), sw - 40)
+        # ↓ toujours conserver la hauteur actuelle de la fenêtre
+        current_h = self.winfo_height()
         cy = self.winfo_y()
 
         def _apply(w):
             cx = max(0, (sw - w) // 2)
-            self.geometry(f"{w}x{self.winfo_height()}+{cx}+{cy}")
+            self.geometry(f"{w}x{current_h}+{cx}+{cy}")  # ← current_h figé au début
             self.update_idletasks()
             try:
                 total = self._pane.winfo_width()
@@ -2796,13 +2813,13 @@ class App(tk.Tk):
 
     def _build_thumbs_async(self, start_idx):
         if start_idx == 0:
-            self._loading_thumbs = True   # ← bloque _fit_window pendant le chargement
+            self._loading_thumbs = True
 
-        BATCH_SIZE = 5  # plus petit = UI plus réactive
+        BATCH_SIZE = 5
         end_idx = min(start_idx + BATCH_SIZE, len(self.thumbs))
         for i in range(start_idx, end_idx):
             entry = self.thumbs[i]
-            if entry["img"] is None:          # ← chargement à la demande
+            if entry["img"] is None:
                 try:
                     entry["img"] = Image.open(entry["path"]).copy()
                 except Exception:
@@ -2815,8 +2832,42 @@ class App(tk.Tk):
             self._loading_thumbs = False
             self._prog_lbl.config(text=f"✔  {len(self.thumbs)} image(s) rechargée(s)")
             self.after(3000, lambda: self._prog_lbl.config(text=""))
-            self.after(50, lambda: self._fit_window(animate=False))
+            # ↓ on passe la hauteur cible explicitement
+            target_h = int(self._cfg.get("window_h", self.winfo_height()))
+            self.after(50, lambda: self._fit_window_with_height(target_h, animate=False))
             self.after(80, self._restore_marked)
+
+    def _fit_window_with_height(self, target_h, animate=False):
+        """Comme _fit_window mais impose une hauteur plutôt que winfo_height()."""
+        SASH_W = 5
+        sz = self.v_tsize.get()
+        cols = self.v_cols.get()
+        center_need = cols * (sz + 22) + 12 + 14 + 10
+        right_need = self.v_psize.get() + 36
+        self.update_idletasks()
+
+        try:
+            s0 = self._pane.sash_coord(0)[0]
+        except Exception:
+            s0 = LEFT_MIN_W
+
+        sw = self.winfo_screenwidth()
+        win_target = min(max(s0 + center_need + right_need + SASH_W * 2 + 4,
+                            LEFT_MIN_W + 300), sw - 40)
+        cy = self.winfo_y()
+        cx = max(0, (sw - win_target) // 2)
+
+        self.geometry(f"{win_target}x{target_h}+{cx}+{cy}")
+        self.update_idletasks()
+        try:
+            total = self._pane.winfo_width()
+            s1_new = max(s0 + center_need, total - right_need - SASH_W)
+            self._pane.sash_place(0, s0, 0)
+            self._pane.sash_place(1, s1_new, 0)
+            self._pane.paneconfig(self._rf, minsize=right_need)
+            self._pane.paneconfig(self._cf, minsize=center_need)
+        except Exception:
+            pass
 
     # ── Sauvegarde config ─────────────────────────────────────────────────────
     def _save_config_action(self):
