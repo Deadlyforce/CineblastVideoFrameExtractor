@@ -2367,10 +2367,11 @@ class App(tk.Tk):
             except Exception: pass
 
     def _upd_badges(self):
-        n=len(self.sel)
-        self._badge_sel.config(text=f"{n} sélectionnée(s)" if n else "")
-        self._del_btn.set_state("normal" if n else "disabled")
-        self._copy_btn.set_state("normal" if n else "disabled")
+        n_sel = len(self.sel)
+        n_marked = len(self.marked)
+        self._badge_sel.config(text=f"{n_sel} sélectionnée(s)" if n_sel else "")
+        self._del_btn.set_state("normal" if n_sel else "disabled")
+        self._copy_btn.set_state("normal" if (n_sel or n_marked) else "disabled")
 
     # ── Suppression ───────────────────────────────────────────────────────────
     def _delete_selected(self):
@@ -2655,8 +2656,9 @@ class App(tk.Tk):
         self._auto_save_config()
 
     def _upd_marked_badge(self):
-        n=len(self.marked)
+        n = len(self.marked)
         self._badge_marked.config(text=f"✓ {n} marquée(s)" if n else "")
+        self._upd_badges()   # active/désactive le bouton de déplacement selon sel + marked
 
     def _auto_save_config(self):
         s0,s1=self._get_sash_positions()
