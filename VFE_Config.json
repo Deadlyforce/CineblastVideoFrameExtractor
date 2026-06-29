@@ -11,7 +11,7 @@
   "preview_size": 650,
   "window_size": "1920x1200",
   "sash_left": 301,
-  "sash_right": 1702,
+  "sash_right": 606,
   "confirm_delete": false,
   "black_filter": true,
   "mark_key": "s",
@@ -19,5 +19,5 @@
   "last_video_dir": "C:/Users/norma/Desktop",
   "marked_files": [],
   "last_output_dir": "C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/Extraction Photos Temp",
-  "window_h": 1282
+  "window_h": 1
 }

@@ -2274,6 +2274,11 @@ class App(tk.Tk):
         if len(self.sel)==1: self._show_preview(next(iter(self.sel)))
         self._adjust_center_width()
 
+        # --- AJOUT : forcer le rafraîchissement du canvas ---
+        self._gf.update_idletasks()
+        self._cv.configure(scrollregion=self._cv.bbox("all"))
+        self._cv.yview_moveto(0)
+
     # ── Sélection ─────────────────────────────────────────────────────────────
     def _thumb_hover(self,cell,idx,on):
         try:
