@@ -1744,8 +1744,10 @@ class App(tk.Tk):
             self._auto_save_config()
 
     def _pick_workdir(self):
-        p=filedialog.askdirectory(title="Dossier de Travail")
-        if p: self.v_workdir.set(p)
+        p = filedialog.askdirectory(title="Dossier de Travail")
+        if p:
+            self.v_workdir.set(p)
+            self._auto_save_config()
 
     def _load_video_info(self,path):
         cap=cv2.VideoCapture(path)
