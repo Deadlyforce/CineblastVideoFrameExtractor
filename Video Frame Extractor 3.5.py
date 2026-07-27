@@ -2751,12 +2751,21 @@ class App(tk.Tk):
     def _show_preview(self,idx):
         if idx is None or idx>=len(self.thumbs): return
         entry=self.thumbs[idx]; sz=self.v_psize.get()
-        p=entry["img"].copy(); p.thumbnail((sz,sz),Image.LANCZOS)
+        try:
+            full = Image.open(entry["path"])
+            ow, oh = full.size            # dims réelles lues dans l'en-tête, sans décodage
+            full.draft("RGB", (sz, sz))   # décodage allégé mais net pour l'aperçu
+            p = full.copy()
+        except Exception:
+            p = entry["img"].copy() if entry.get("img") is not None else None
+            ow, oh = (p.size if p is not None else (0, 0))
+        if p is None:
+            return
+        p.thumbnail((sz,sz),Image.LANCZOS)
         imgtk=ImageTk.PhotoImage(p); self._prev_ref=imgtk; self._prev_lbl.config(image=imgtk)
-        ow,oh=entry["img"].size
         self._prev_info.config(
             text=f"{os.path.basename(entry['path'])}\n\n"
-                 f"⏱  {hms(entry['tc'])}\n📐  {ow}×{oh} px\n#{idx+1} / {len(self.thumbs)}")
+                f"⏱  {hms(entry['tc'])}\n📐  {ow}×{oh} px\n#{idx+1} / {len(self.thumbs)}")
 
     # ── Rechargement dossier ──────────────────────────────────────────────────
     def _reload_extraction_folder(self):
@@ -2826,11 +2835,14 @@ class App(tk.Tk):
 
         BATCH_SIZE = 5
         end_idx = min(start_idx + BATCH_SIZE, len(self.thumbs))
+        sz = self.v_tsize.get()
         for i in range(start_idx, end_idx):
             entry = self.thumbs[i]
             if entry["img"] is None:
                 try:
-                    entry["img"] = Image.open(entry["path"]).copy()
+                    im = Image.open(entry["path"])
+                    im.draft("RGB", (sz, sz))   # décodage JPEG allégé, échelle 1/2·1/4·1/8
+                    entry["img"] = im.copy()
                 except Exception:
                     continue
             self._add_thumb(i)

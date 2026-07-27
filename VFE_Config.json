@@ -1,8 +1,8 @@
 {
-  "video_path": "C:/Users/norma/Desktop/The Toxic Avenger (1984).mkv",
+  "video_path": "C:/Users/norma/Desktop/Obsession (2025) 2160p.mkv",
   "output_dir": "C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/Extraction Photos Temp",
-  "work_dir": "C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/2026-06-29 Toxic Avenger (1984)",
-  "generic_name": "TA1984",
+  "work_dir": "C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/2026-07-24 Obsession/photos",
+  "generic_name": "Obsession",
   "mode": "count",
   "count_val": 400,
   "interval_val": 15,
