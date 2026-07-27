@@ -2102,6 +2102,7 @@ class App(tk.Tk):
         self._prog.set(pct); self._prog_lbl.config(text=f"{done}/{tot}  ·  {hms(t)}")
         self._badge_total.config(text=f"{len(self.thumbs)} image(s)")
         self._add_thumb(idx)
+        self._adjust_center_width()
 
     def _extract_done(self,black_tcs=None):
         self._run_btn.set_state("normal"); self._cancel_btn.set_state("disabled")
@@ -2167,10 +2168,6 @@ class App(tk.Tk):
             w.bind("<Leave>",            self._on_thumb_leave)
 
         self.thumb_wids[idx] = {"frame": cell, "label": lbl, "tc_lbl": tclbl}
-        self._adjust_center_width()
-
-        if not getattr(self, '_loading_thumbs', False):
-            self._adjust_center_width()
 
     # ── Redimensionnement ─────────────────────────────────────────────────────
     _fit_job=None
@@ -2208,12 +2205,13 @@ class App(tk.Tk):
             self.geometry(f"{w}x{current_h}+{cx}+{cy}")  # ← current_h figé au début
             self.update_idletasks()
             try:
+                self._pane.paneconfig(self._cf, minsize=center_need)
+                self._pane.paneconfig(self._rf, minsize=right_need)
+                self.update_idletasks()
                 total = self._pane.winfo_width()
                 s1_new = max(s0 + center_need, total - right_need - SASH_W)
                 self._pane.sash_place(0, s0, 0)
                 self._pane.sash_place(1, s1_new, 0)
-                self._pane.paneconfig(self._rf, minsize=right_need)
-                self._pane.paneconfig(self._cf, minsize=center_need)
             except Exception:
                 pass
 
@@ -2881,12 +2879,13 @@ class App(tk.Tk):
         self.geometry(f"{win_target}x{target_h}+{cx}+{cy}")
         self.update_idletasks()
         try:
+            self._pane.paneconfig(self._cf, minsize=center_need)
+            self._pane.paneconfig(self._rf, minsize=right_need)
+            self.update_idletasks()
             total = self._pane.winfo_width()
             s1_new = max(s0 + center_need, total - right_need - SASH_W)
             self._pane.sash_place(0, s0, 0)
             self._pane.sash_place(1, s1_new, 0)
-            self._pane.paneconfig(self._rf, minsize=right_need)
-            self._pane.paneconfig(self._cf, minsize=center_need)
         except Exception:
             pass
 
