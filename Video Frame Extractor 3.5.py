@@ -39,6 +39,7 @@ DEFAULT_CONFIG = {
     "hdr_tonemap":     "hable",
     "last_video_dir": "",
     "last_output_dir": "",
+    "last_work_dir": "",
     "window_h": 1080,
 }
 
@@ -1744,9 +1745,13 @@ class App(tk.Tk):
             self._auto_save_config()
 
     def _pick_workdir(self):
-        p = filedialog.askdirectory(title="Dossier de Travail")
+        initial = self._cfg.get("last_work_dir", "")
+        if not initial or not os.path.isdir(initial):
+            initial = os.path.expanduser("~")
+        p = filedialog.askdirectory(title="Dossier de Travail", initialdir=initial)
         if p:
             self.v_workdir.set(p)
+            self._cfg["last_work_dir"] = p
             self._auto_save_config()
 
     def _load_video_info(self,path):
@@ -2687,6 +2692,7 @@ class App(tk.Tk):
             "confirm_delete":self.v_confirm_del.get(),"black_filter":self.v_black_filter.get(),
             "mark_key":self.v_mark_key.get(),"hdr_tonemap":self.v_hdr_tonemap.get(),
             "last_video_dir": self._cfg.get("last_video_dir", ""),
+            "last_work_dir": self._cfg.get("last_work_dir", ""),
             "marked_files":[self.thumbs[i]["path"]            
                             for i in sorted(self.marked) if i<len(self.thumbs)],
             "last_output_dir": self._cfg.get("last_output_dir", ""),
@@ -2919,6 +2925,7 @@ class App(tk.Tk):
             "mark_key":self.v_mark_key.get(),
             "hdr_tonemap":self.v_hdr_tonemap.get(),
             "last_video_dir": self._cfg.get("last_video_dir", ""),
+            "last_work_dir": self._cfg.get("last_work_dir", ""),
             "marked_files":[self.thumbs[i]["path"]
                             for i in sorted(self.marked) if i<len(self.thumbs)],
             "last_output_dir": self._cfg.get("last_output_dir", ""),
