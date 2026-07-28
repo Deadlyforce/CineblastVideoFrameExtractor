@@ -1401,7 +1401,7 @@ class App(tk.Tk):
 
         self._gf=tk.Frame(self._cv,bg=C["thumb_bg"],padx=6,pady=8)
         self._gwin=self._cv.create_window((0,0),window=self._gf,anchor="nw")
-        self._gf.bind("<Configure>",lambda e: self._cv.configure(scrollregion=self._cv.bbox("all")))
+        self._gf.bind("<Configure>",self._on_grid_configure)
         self._cv.bind("<Configure>",lambda e: self._cv.itemconfig(self._gwin,width=e.width))
         self._cv.bind("<MouseWheel>",self._scroll)
         self._cv.bind("<Button-4>",  self._scroll)
@@ -2243,6 +2243,11 @@ class App(tk.Tk):
 
     def _adjust_center_width(self): self._fit_window(animate=False)
 
+    def _on_grid_configure(self, e):
+        if getattr(self, '_loading_thumbs', False):
+            return
+        self._cv.configure(scrollregion=self._cv.bbox("all"))
+
     def _clear_grid(self):
         for w in self._gf.winfo_children(): w.destroy()
         self.thumb_refs.clear(); self.thumb_wids.clear()
@@ -2266,7 +2271,9 @@ class App(tk.Tk):
 
     def _rebuild_grid(self):
         self._clear_grid()
+        self._loading_thumbs = True
         for i in range(len(self.thumbs)): self._add_thumb(i)
+        self._loading_thumbs = False
         for i in self.sel:    self._set_sel(i,True)
         for i in self.marked: self._update_mark_overlay(i)
         if len(self.sel)==1: self._show_preview(next(iter(self.sel)))
@@ -2849,6 +2856,8 @@ class App(tk.Tk):
             self.after(1, self._build_thumbs_async, end_idx)
         else:
             self._loading_thumbs = False
+            self._gf.update_idletasks()
+            self._cv.configure(scrollregion=self._cv.bbox("all"))
             self._prog_lbl.config(text=f"✔  {len(self.thumbs)} image(s) rechargée(s)")
             self.after(3000, lambda: self._prog_lbl.config(text=""))
             # ↓ on passe la hauteur cible explicitement
