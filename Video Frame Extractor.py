@@ -1950,10 +1950,14 @@ class App(tk.Tk):
             "active": False,
             "x0": self._cv.canvasx(event.x),
             "y0": self._cv.canvasy(event.y),
+            "wx": event.x,
+            "wy": event.y,
             "ctrl": bool(event.state & 0x0004),
             "shift": bool(event.state & 0x0001),
             "before": set(self.sel),
         }
+
+        self._vg_cancel_autoscroll()
 
         return "break"
 
@@ -1961,6 +1965,9 @@ class App(tk.Tk):
         st = getattr(self, "_vg_drag", None)
         if not st:
             return
+
+        st["wx"] = event.x
+        st["wy"] = event.y
 
         x = self._cv.canvasx(event.x)
         y = self._cv.canvasy(event.y)
@@ -1980,6 +1987,7 @@ class App(tk.Tk):
 
         self._vg_draw_rubber()
         self._vg_select_rubber()
+        self._vg_schedule_autoscroll()
 
         return "break"
 
@@ -2051,6 +2059,8 @@ class App(tk.Tk):
 
     def _vg_on_release(self, event):
         st = getattr(self, "_vg_drag", None)
+        self._vg_cancel_autoscroll()
+
         if not st:
             return
 
@@ -2080,6 +2090,91 @@ class App(tk.Tk):
         self._vg_drag = None
 
         return "break"
+
+    def _vg_on_release_all(self, event):
+        if getattr(self, "_vg_drag", None) is None:
+            return
+
+        try:
+            if event.widget is self._cv:
+                return
+        except Exception:
+            pass
+
+        self._vg_cancel_autoscroll()
+
+        try:
+            self._cv.delete("rb")
+        except Exception:
+            pass
+
+        self._vg_drag = None
+
+    def _vg_cancel_autoscroll(self):
+        job = getattr(self, "_vg_autoscroll_job", None)
+        if job:
+            try:
+                self.after_cancel(job)
+            except Exception:
+                pass
+
+        self._vg_autoscroll_job = None
+
+    def _vg_schedule_autoscroll(self):
+        if getattr(self, "_vg_autoscroll_job", None) is None:
+            self._vg_autoscroll_job = self.after(50, self._vg_autoscroll_tick)
+
+    def _vg_autoscroll_tick(self):
+        self._vg_autoscroll_job = None
+
+        st = getattr(self, "_vg_drag", None)
+        if not st or not st.get("active"):
+            return
+
+        if getattr(self, "_vg", None) is None:
+            return
+
+        try:
+            if not self._cv.winfo_exists():
+                return
+
+            canvas_h = max(1, self._cv.winfo_height())
+        except Exception:
+            return
+
+        wx = st.get("wx", 0)
+        wy = st.get("wy", 0)
+
+        edge = 40
+
+        top_before = self._cv.canvasy(0)
+
+        if wy < edge:
+            step = max(1, (edge - wy) // 8)
+            self._cv.yview_scroll(-step, "units")
+        elif wy > canvas_h - edge:
+            step = max(1, (wy - (canvas_h - edge)) // 8)
+            self._cv.yview_scroll(step, "units")
+        else:
+            return
+
+        self._cv.update_idletasks()
+
+        if self._cv.canvasy(0) == top_before:
+            return
+
+        self._vg.refresh()
+
+        x = self._cv.canvasx(wx)
+        y = self._cv.canvasy(wy)
+
+        st["x1"] = x
+        st["y1"] = y
+
+        self._vg_draw_rubber()
+        self._vg_select_rubber()
+
+        self._vg_schedule_autoscroll()
 
     def _on_info_canvas_configure(self, event):
         """Le canvas change de taille → on ajuste la largeur du contenu et on redessine le fond."""
@@ -2149,25 +2244,11 @@ class App(tk.Tk):
         self.bind_all("<Button-5>",  self._scroll_universal)
         self._mark_binding_id=None; self._rebind_mark_key()
         self.bind_all("<ButtonPress-1>",self._global_click_deselect,add="+")
+        self.bind_all("<ButtonRelease-1>",self._vg_on_release_all,add="+")
         self.bind("<Left>",  self._on_arrow_key)
         self.bind("<Right>", self._on_arrow_key)
         self.bind("<Up>",    self._on_arrow_key)
         self.bind("<Down>",  self._on_arrow_key)
-        
-
-    # def _on_window_configure(self, event):
-    #     if not self._geometry_ready:
-    #         return
-    #     if event.widget is self and event.height > 100:
-    #         self._cfg["window_h"] = event.height
-
-    # def _on_window_configure(self, event):
-    #     if event.widget is self and event.height > 100:
-    #         import time
-    #         ready = getattr(self, '_geometry_ready', False)
-    #         print(f"[CONFIGURE] h={event.height}  ready={ready}  t={time.time():.3f}")
-    #         if ready:
-    #             self._cfg["window_h"] = event.height
 
     def _on_window_configure(self, event):
         pass
