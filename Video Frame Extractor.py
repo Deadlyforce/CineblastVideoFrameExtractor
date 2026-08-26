@@ -3,14 +3,13 @@
 Video Frame Extractor  —  v4.0
 Nouveautés v4.0 : identité des images par chemin (plus d'indices) —
                   sélection / marquage / suppression / déplacement fiabilisés.
-
-Dépendances : pip install opencv-python Pillow numpy
+Dépendances : pip install opencv-python Pillow numpy send2trash
               ffmpeg requis (brew/apt/winget install ffmpeg)
 """
-
-import os, json, threading, tkinter as tk, subprocess, shutil, tempfile, time
+import os, json, threading, tkinter as tk, subprocess, shutil, tempfile, time, logging
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, asdict
+from logging.handlers import RotatingFileHandler
 from tkinter import ttk, filedialog, messagebox
 import cv2
 import numpy as np
@@ -21,7 +20,17 @@ try:
 except ImportError:
     send2trash = None
     _TRASH_OK = False
-import io
+
+# ── Journal (v4.5) ───────────────────────────────────────────────────────────
+LOG_FILE = "VFE_Log.txt"
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-7s  %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[RotatingFileHandler(LOG_FILE, maxBytes=512*1024,
+                                  backupCount=2, encoding="utf-8")],
+)
+log = logging.getLogger("vfe")
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Config
@@ -91,7 +100,7 @@ def load_config():
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 return _coerce_config(json.load(f))
         except Exception:
-            pass
+            log.exception("Config illisible — valeurs par défaut utilisées")
     return _coerce_config({})
 
 def save_config(cfg):
@@ -99,7 +108,7 @@ def save_config(cfg):
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
     except Exception:
-        pass
+        log.exception("Échec de la sauvegarde de la configuration")
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Palette
@@ -186,19 +195,25 @@ def get_display_size(path, raw_w, raw_h):
     return raw_w, raw_h
 
 def trash_files(paths):
-    """v4.4 : envoie une liste de fichiers à la corbeille en UNE opération
+    """v4.4/v4.5 : envoie une liste de fichiers à la corbeille en UNE opération
     (= une seule restauration groupée possible depuis la corbeille).
     Retourne la liste des erreurs [(path, exception), ...].
-    Fallback : os.remove si send2trash est absent ou si l'envoi échoue."""
+    Fallback : os.remove si send2trash est absent ou si l'envoi échoue.
+    Normalise les chemins Windows (→ backslashes) pour éviter le bug
+    send2trash de mélange / et \\ dans la forme étendue \\\\?\\."""
     existing = [p for p in paths if os.path.exists(p)]
     if not existing:
         return []
+    # v4.5 : normalisation Windows (os.path.normpath : / → \ sur Windows,
+    # identité sur POSIX). Nécessaire pour que send2trash puisse préfixer
+    # proprement avec \\?\ sans produire de chemins mixtes invalides.
+    normalized = [os.path.normpath(p) for p in existing]
     if _TRASH_OK:
         try:
-            send2trash(existing)
+            send2trash(normalized)
             return []
-        except Exception:
-            pass   # fallback ci-dessous
+        except Exception as ex:
+            log.warning("send2trash en échec (%s) — fallback os.remove", ex)
     errors = []
     for p in existing:
         try:
@@ -884,6 +899,9 @@ class App(tk.Tk):
         self.configure(bg=C["bg"])
         self._cfg = load_config()
         self._ffmpeg_ok = ffmpeg_available()
+        log.info("Démarrage — ffmpeg %s | corbeille (send2trash) %s",
+                 "présent" if self._ffmpeg_ok else "ABSENT (fallback OpenCV)",
+                 "ACTIVE" if _TRASH_OK else "ABSENTE → suppressions DÉFINITIVES !")
 
         self.v_path         = tk.StringVar(value=self._cfg["video_path"])
         self.v_outdir       = tk.StringVar(value=self._cfg["output_dir"])
@@ -1573,6 +1591,7 @@ class App(tk.Tk):
 
     def _on_close(self):
         self._cfg["window_h"] = self.winfo_height()
+        self._cancel = True          # v4.5 : interrompt l'extraction en cours → sortie propre
         self._auto_save_config()
         self.destroy()
 
@@ -1823,6 +1842,8 @@ class App(tk.Tk):
         self._update_derived()
         # Détection HDR en arrière-plan pour ne pas bloquer l'UI
         threading.Thread(target=self._detect_hdr_async, args=(path,), daemon=True).start()
+        log.info("Vidéo chargée : %s | %s | %dx%d | %.2f fps",
+                 os.path.basename(path), hms(dur), raw_w, raw_h, fps)        
 
     def _force_info_redraw(self):
         """Force un redimensionnement et redessine le fond du bloc d'infos."""
@@ -1836,6 +1857,7 @@ class App(tk.Tk):
         """Lance detect_hdr() en thread, puis met à jour l'UI."""
         hdr = detect_hdr(path)
         self._hdr_info = hdr
+        log.info("Analyse couleur : %s", "HDR" if hdr.get("is_hdr") else "SDR")
         self.after(0, self._update_hdr_indicator, hdr)
 
     def _update_hdr_indicator(self, hdr):
@@ -1950,7 +1972,9 @@ class App(tk.Tk):
         self._cancel_btn.set_state("normal"); self._cancel=False
         # v4.1 : état du flush ordonné (les workers terminent dans le désordre)
         self._next_flush=0; self._flushed=0; self._flush_tot=len(targets)
-        self._pending_results={}
+        self._pending_results={}; self._failed_tcs=[]     # v4.5 : échecs
+        log.info("Extraction lancée : %d frame(s) ciblée(s) — %s",
+                 len(targets), os.path.basename(self.v_path.get()))
         self._prog.set(0); self._prog_lbl.config(text="Initialisation…")
 
         threading.Thread(target=self._worker,
@@ -1962,36 +1986,53 @@ class App(tk.Tk):
         self._prog_lbl.config(text="Annulation…")
 
     def _run_ffmpeg(self, cmd, timeout):
-        """v4.1 : lance ffmpeg via Popen et surveille :
-           - self._cancel → tue le processus en cours (annulation effective)
-           - le timeout   → tue le processus bloqué
-           Retourne le returncode (0 = succès), -1 sinon."""
+        """v4.1 : lance ffmpeg via Popen et surveille self._cancel / le timeout.
+        v4.5 : retourne (returncode, raison) — la raison est la queue du stderr
+        de ffmpeg (capturé dans un fichier temporaire, sans risque de blocage).
+        returncode : 0 = succès, -1 = annulation / timeout / erreur de lancement."""
+        err_fd, err_path = tempfile.mkstemp(suffix=".txt", prefix="vfe_err_")
         try:
-            proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
-                                    stderr=subprocess.DEVNULL)
-        except Exception:
-            return -1
+            proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=err_fd)
+        except Exception as ex:
+            os.close(err_fd)
+            try: os.remove(err_path)
+            except Exception: pass
+            return -1, f"lancement impossible : {ex}"
+        os.close(err_fd)          # l'enfant a sa propre copie du descripteur
         deadline = time.time() + timeout
+        rc, reason = -1, ""
         try:
             while True:
                 if self._cancel:
                     proc.terminate()
                     try: proc.wait(timeout=3)
                     except Exception: proc.kill()
-                    return -1
+                    rc, reason = -1, "annulé"
+                    break
                 rc = proc.poll()
                 if rc is not None:
-                    return rc
+                    break
                 if time.time() > deadline:
                     proc.terminate()
                     try: proc.wait(timeout=3)
                     except Exception: proc.kill()
-                    return -1
+                    rc, reason = -1, f"timeout après {timeout}s"
+                    break
                 time.sleep(0.05)
-        except Exception:
+        except Exception as ex:
             try: proc.kill()
             except Exception: pass
-            return -1
+            rc, reason = -1, f"erreur : {ex}"
+        # Queue du stderr (diagnostic)
+        tail = ""
+        try:
+            with open(err_path, "r", encoding="utf-8", errors="replace") as f:
+                tail = f.read().strip()
+        except Exception:
+            pass
+        try: os.remove(err_path)
+        except Exception: pass
+        return rc, (reason or tail)
 
     @staticmethod
     def _tmp_ok(tmp_path):
@@ -2028,45 +2069,58 @@ class App(tk.Tk):
             self._zscale_ok = zscale_available()
 
         def task(i, t):
-            """Extrait la frame n°i (timestamp t) — tourne dans un thread du pool."""
+            """Extrait la frame n°i (timestamp t) — tourne dans un thread du pool.
+            v4.5 : chaque échec remonte avec sa raison (journal + statut final)."""
             if self._cancel:
-                self.after(0, self._on_worker_result, i, "fail", None, "", t)
+                self.after(0, self._on_worker_result, i, "fail", None, "", t, "annulé")
                 return
             tmp_fd,tmp_path=tempfile.mkstemp(suffix=".jpg",prefix="vfe_")
             os.close(tmp_fd)
             try: os.remove(tmp_path)
             except Exception: pass
-            ok=False
+            ok=False; last_reason=""; rc=-1
             if is_hdr:
-                # ── Pipeline HDR→SDR (cascade de fallback identique) ──────
+                # ── Pipeline HDR→SDR (cascade de fallback) ─────────────────
                 if self._zscale_ok:
                     cmd=build_ffmpeg_cmd_hdr(vpath,t,tmp_path,disp_w,disp_h,
                                              sar_applied,hdr_info,tonemap)
-                    ok = self._run_ffmpeg(cmd, timeout=60) == 0 and self._tmp_ok(tmp_path)
+                    rc,last_reason = self._run_ffmpeg(cmd, timeout=60)
+                    ok = rc == 0 and self._tmp_ok(tmp_path)
                 if not ok and not self._cancel:
                     cmd2=build_ffmpeg_cmd_hdr_fallback(vpath,t,tmp_path,disp_w,disp_h,sar_applied)
-                    ok = self._run_ffmpeg(cmd2, timeout=60) == 0 and self._tmp_ok(tmp_path)
+                    rc,r2 = self._run_ffmpeg(cmd2, timeout=60)
+                    if rc == 0 and self._tmp_ok(tmp_path): ok=True
+                    else: last_reason = r2 or last_reason
                 if not ok and not self._cancel:
                     cmd3=build_ffmpeg_cmd(vpath,t,tmp_path,disp_w,disp_h,sar_applied)
-                    ok = self._run_ffmpeg(cmd3, timeout=30) == 0 and self._tmp_ok(tmp_path)
+                    rc,r3 = self._run_ffmpeg(cmd3, timeout=30)
+                    if rc == 0 and self._tmp_ok(tmp_path): ok=True
+                    else: last_reason = r3 or last_reason
             else:
-                # ── Pipeline SDR standard ─────────────────────────────────
+                # ── Pipeline SDR standard ──────────────────────────────────
                 cmd=build_ffmpeg_cmd(vpath,t,tmp_path,disp_w,disp_h,sar_applied)
-                ok = self._run_ffmpeg(cmd, timeout=30) == 0 and self._tmp_ok(tmp_path)
+                rc,last_reason = self._run_ffmpeg(cmd, timeout=30)
+                ok = rc == 0 and self._tmp_ok(tmp_path)
                 if not ok and not self._cancel:
                     cmd2=build_ffmpeg_cmd_fallback(vpath,t,tmp_path,disp_w,disp_h,sar_applied)
-                    ok = self._run_ffmpeg(cmd2, timeout=30) == 0 and self._tmp_ok(tmp_path)
+                    rc,r2 = self._run_ffmpeg(cmd2, timeout=30)
+                    if rc == 0 and self._tmp_ok(tmp_path): ok=True
+                    else: last_reason = r2 or last_reason
             if not ok:
                 try: os.remove(tmp_path)
                 except Exception: pass
-                self.after(0, self._on_worker_result, i, "fail", None, "", t)
+                if rc == 0 and not self._tmp_ok(tmp_path):
+                    last_reason = last_reason or "fichier de sortie vide ou absent"
+                self.after(0, self._on_worker_result, i, "fail", None, "", t,
+                           last_reason or "raison inconnue")
                 return
             try:
                 img=Image.open(tmp_path).copy()
-            except Exception:
+            except Exception as ex:
                 try: os.remove(tmp_path)
                 except Exception: pass
-                self.after(0, self._on_worker_result, i, "fail", None, "", t)
+                self.after(0, self._on_worker_result, i, "fail", None, "", t,
+                           f"décodage image : {ex}")
                 return
             if do_filter:
                 arr=np.array(img)
@@ -2075,27 +2129,26 @@ class App(tk.Tk):
                     except Exception: pass
                     self.after(0, self._on_worker_result, i, "black", None, "", t)
                     return
-            # v4.1 : numéro = position dans le plan d'extraction.
-            # Ordre chronologique garanti même si les workers finissent
-            # dans le désordre. Trous possibles si des frames noires
-            # sont filtrées (comportement assumé).
+            # v4.1 : numéro = position dans le plan d'extraction
             fname=f"{base}_{i+1:04d}_{tc_str(t)}.jpg"
             fpath=os.path.join(outdir,fname)
             try:
                 shutil.move(tmp_path,fpath)
-            except Exception:
+            except Exception as ex:
                 try: os.remove(tmp_path)
                 except Exception: pass
-                self.after(0, self._on_worker_result, i, "fail", None, "", t)
+                self.after(0, self._on_worker_result, i, "fail", None, "", t,
+                           f"déplacement : {ex}")
                 return
             self.after(0, self._on_worker_result, i, "ok", img, fpath, t)
 
-        # v4.1 : FFMPEG_WORKERS ffmpeg en parallèle (lecture seule du même fichier)
+        # v4.1 : FFMPEG_WORKERS ffmpeg en parallèle
         with ThreadPoolExecutor(max_workers=FFMPEG_WORKERS) as ex:
             futures=[ex.submit(task,i,t) for i,t in enumerate(targets)]
             for f in futures:
                 try: f.result()
-                except Exception: pass
+                except Exception as exc:
+                    log.exception("Worker inattendu : %s", exc)
 
     # ── Fallback OpenCV ───────────────────────────────────────────────────────
     def _worker_opencv(self,vpath,outdir,targets,black_tcs):
@@ -2163,13 +2216,13 @@ class App(tk.Tk):
         self._prog.set(pct)
         self._prog_lbl.config(text=f"{done}/{tot}  ·  {hms(t)}  🔲 noire ignorée")
 
-    def _on_worker_result(self, i, kind, img, fpath, t):
+    def _on_worker_result(self, i, kind, img, fpath, t, info=""):
         """v4.1 : résultat d'un worker ffmpeg (kind = "ok" / "black" / "fail").
-        Les workers terminent dans le désordre : on bufferise puis on affiche
-        strictement dans l'ordre du plan, pour garder la grille chronologique."""
-        self._pending_results[i] = (kind, img, fpath, t)
+        Bufferise puis affiche strictement dans l'ordre du plan.
+        v4.5 : les échecs sont comptés, journalisés et affichés en fin d'extraction."""
+        self._pending_results[i] = (kind, img, fpath, t, info)
         while self._next_flush in self._pending_results:
-            k, im, fp, tc = self._pending_results.pop(self._next_flush)
+            k, im, fp, tc, inf = self._pending_results.pop(self._next_flush)
             self._flushed += 1
             pct = self._flushed / max(1, self._flush_tot) * 100
             if k == "ok":
@@ -2177,8 +2230,9 @@ class App(tk.Tk):
             elif k == "black":
                 self._flush_black_tcs.append(tc)
                 self._black_skipped(tc, self._flushed, self._flush_tot, pct)
-            # k == "fail" : avance silencieusement
-            # (la visibilité des échecs arrive au chantier n°6)
+            else:   # "fail"
+                self._failed_tcs.append(tc)
+                log.warning("Échec frame %d (%s) : %s", i + 1, hms(tc), inf or "raison inconnue")
             self._next_flush += 1
 
     def _frame_done(self,img,fpath,t,done,tot,pct):
@@ -2194,10 +2248,17 @@ class App(tk.Tk):
     def _extract_done(self,black_tcs=None):
         self._run_btn.set_state("normal"); self._cancel_btn.set_state("disabled")
         n=len(self.thumbs); nb=len(black_tcs) if black_tcs else 0
+        nf=len(self._failed_tcs)                       # v4.5
+        log.info("Extraction terminée : %d image(s), %d noire(s) filtrée(s), %d échec(s)%s",
+                 n, nb, nf, "  [ANNULÉE]" if self._cancel else "")
         if self._cancel: self._prog_lbl.config(text=f"Annulé · {n} image(s) sauvegardée(s)")
+        elif nf: self._prog.set(100); self._prog_lbl.config(text=f"⚠  Terminé · {n} image(s) · {nf} échec(s)")
         else: self._prog.set(100); self._prog_lbl.config(text=f"✔  Terminé · {n} image(s)")
         self._prev_info.config(text="Cliquez sur une\nvignette…" if n else "Aucune image extraite.")
-        if nb>0:
+        # v4.5 : les échecs sont l'info la plus importante → priorité dans la barre de statut
+        if nf and not self._cancel:
+            self._status(f"⚠  {nf} échec(s) d'extraction :  "+"  |  ".join(hms(t) for t in self._failed_tcs),duration=0)
+        elif nb>0:
             self._status(f"🔲  {nb} frame(s) noire(s) :  "+"  |  ".join(hms(t) for t in black_tcs),duration=0)
         elif black_tcs is not None and self.v_black_filter.get():
             self._status("✔  Aucune frame noire détectée.",duration=6000)
@@ -2503,6 +2564,8 @@ class App(tk.Tk):
         first_pos     = min(self._position_of(p) for p in deleted_paths)
         # 1) v4.4 : envoyer les fichiers à la corbeille (envoi groupé)
         errors = trash_files(deleted_paths)
+        log.info("Suppression : %d image(s) → corbeille%s", len(deleted_paths),
+                 f" ({len(errors)} erreur(s))" if errors else "")
         # 2) Détruire les widgets + nettoyer les structures
         for path in deleted_paths:
             w = self.thumb_wids.pop(path, None)
@@ -2552,6 +2615,7 @@ class App(tk.Tk):
         if errors:
             messagebox.showwarning("Erreurs",
                 "\n".join(f"{os.path.basename(p)} : {ex}" for p, ex in errors))
+        log.info("Vider le dossier : %d fichier(s) → corbeille", len(jpgs) - len(errors))
         self.thumbs.clear(); self.thumb_refs.clear(); self.thumb_by_path.clear(); self.thumb_wids.clear()
         self.sel.clear(); self.marked.clear(); self._last_click_path=None; self._upd_marked_badge(); self._clear_grid()
         self._prev_lbl.config(image=""); self._prev_ref=None
@@ -2811,6 +2875,7 @@ class App(tk.Tk):
             except Exception as ex:
                 errors.append(f"{os.path.basename(src)} → {ex}")
         if errors: messagebox.showwarning("Erreurs", "\n".join(errors))
+        log.info("Déplacement : %d/%d image(s) → %s", ok, n, workdir)
         # v4 : retirer les images déplacées (identité = chemin)
         for path in moved_paths:
             w = self.thumb_wids.pop(path, None)
