@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Video Frame Extractor  —  v3.6
-Nouveautés v3.6 :
+Video Frame Extractor  —  v4.0
+Nouveautés v4.0 : identité des images par chemin (plus d'indices) —
+                  sélection / marquage / suppression / déplacement fiabilisés.
 
 Dépendances : pip install opencv-python Pillow numpy
               ffmpeg requis (brew/apt/winget install ffmpeg)
@@ -814,7 +815,7 @@ def is_black_frame(arr_rgb, threshold=5):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Video Frame Extractor  —  v3.6")
+        self.title("Video Frame Extractor  —  v4.0")
         self.configure(bg=C["bg"])
         self._cfg = load_config()
         self._ffmpeg_ok = ffmpeg_available()
@@ -840,9 +841,10 @@ class App(tk.Tk):
         for _v in (self.v_confirm_del, self.v_black_filter, self.v_hdr_tonemap):
             _v.trace_add("write", lambda *a: self._auto_save_config())
 
-        self.video_info={}; self.thumbs=[]; self.thumb_refs=[]
-        self.thumb_wids={}; self.sel=set(); self.marked=set()
-        self._cancel=False; self._prev_ref=None; self._last_click_idx=None
+        self.video_info={}; self.thumbs=[]; self.thumb_refs={}      # v4 : refs PhotoImage par chemin
+        self.thumb_by_path={}                                       # v4 : accès O(1) par chemin
+        self.thumb_wids={}; self.sel=set(); self.marked=set()       # v4 : sets de CHEMINS
+        self._cancel=False; self._prev_ref=None; self._last_click_path=None
         self._drag_active=False; self._drag_in_zone=False; self._drag_sel_before=set()
         self._hdr_info={}          # résultat detect_hdr() pour la vidéo courante
         self._zscale_ok=None       # cache du test zscale_available()
@@ -955,7 +957,7 @@ class App(tk.Tk):
                  fg=C["t2"],bg=C["bg"]).pack(side="left")
         tk.Label(hdr,text="Extractor",font=("Segoe UI Semibold",20),
                  fg=C["accent"],bg=C["bg"]).pack(side="left",padx=(4,0))
-        tk.Label(hdr,text=" v3.6",font=("Segoe UI",9),
+        tk.Label(hdr,text=" v4.0",font=("Segoe UI",9),
                  fg=C["t3"],bg=C["bg"]).pack(side="left",anchor="s",pady=(0,2))
 
         sc_frame = tk.Frame(p, bg=C["bg"])
@@ -1510,76 +1512,57 @@ class App(tk.Tk):
         self.destroy()
 
     def _on_arrow_key(self, event):
-        # Ne pas interférer si le focus est dans un champ texte
         fw = self.focus_get()
         if isinstance(fw, (tk.Entry, DarkEntry)):
             return
-
         if not self.thumbs:
             return
-
         cols = self.v_cols.get()
         total = len(self.thumbs)
-
-        # Déterminer l'index de départ
+        order = [e["path"] for e in self.thumbs]
+        # Déterminer la position de départ
         if len(self.sel) == 1:
-            current = next(iter(self.sel))
+            current = self._position_of(next(iter(self.sel)))
         elif not self.sel:
-            # Rien de sélectionné : on commence à 0
             current = -1
         else:
-            # Sélection multiple : on prend le dernier cliqué
-            current = self._last_click_idx if self._last_click_idx is not None else min(self.sel)
-
-        # Calculer le nouvel index
-        if event.keysym == "Right":
-            new = current + 1
-        elif event.keysym == "Left":
-            new = current - 1
-        elif event.keysym == "Down":
-            new = current + cols
-        elif event.keysym == "Up":
-            new = current - cols
-        else:
-            return
-
-        # Rester dans les bornes
+            anchor = self._last_click_path
+            current = self._position_of(anchor) if anchor else min(self._position_of(p) for p in self.sel)
+        if current < 0:
+            current = -1
+        # Calculer la nouvelle position
+        if event.keysym == "Right":  new = current + 1
+        elif event.keysym == "Left": new = current - 1
+        elif event.keysym == "Down": new = current + cols
+        elif event.keysym == "Up":   new = current - cols
+        else: return
         new = max(0, min(new, total - 1))
         if new == current:
             return
-
-        # Appliquer la sélection
-        for i in list(self.sel):
-            self._set_sel(i, False)
-        self.sel.clear()
-        self.sel.add(new)
-        self._set_sel(new, True)
-        self._last_click_idx = new
+        new_path = order[new]
+        self._clear_selection()
+        self.sel.add(new_path)
+        self._set_sel(new_path, True)
+        self._last_click_path = new_path
         self._upd_badges()
-        self._show_preview(new)
+        self._show_preview(new_path)
+        self._scroll_to_thumb(new_path)
 
-        # Scroller pour que la vignette soit visible
-        self._scroll_to_thumb(new)
-
-
-    def _scroll_to_thumb(self, idx):
-        """Fait défiler le canvas central pour que la vignette idx soit visible."""
-        if idx not in self.thumb_wids:
+    def _scroll_to_thumb(self, path):
+        """Fait défiler le canvas central pour que la vignette path soit visible."""
+        if path not in self.thumb_wids:
             return
-        cell = self.thumb_wids[idx]["frame"]
+        cell = self.thumb_wids[path]["frame"]
         try:
             self._cv.update_idletasks()
             total_h = self._cv.bbox("all")[3]
             if not total_h:
                 return
-
-            # Position absolue de la cellule dans le canvas (via winfo_rooty)
             cell_top    = cell.winfo_rooty() - self._cv.winfo_rooty() + self._cv.canvasy(0)
             cell_bottom = cell_top + cell.winfo_height()
             canvas_h    = self._cv.winfo_height()
             scroll_top  = self._cv.canvasy(0)
             scroll_bot  = scroll_top + canvas_h
-
             if cell_top < scroll_top:
                 self._cv.yview_moveto(cell_top / total_h)
             elif cell_bottom > scroll_bot:
@@ -1602,9 +1585,8 @@ class App(tk.Tk):
                     cell.winfo_rooty()<=yr<=cell.winfo_rooty()+cell.winfo_height()):
                     return
             except Exception: pass
-        for i in list(self.sel): self._set_sel(i,False)
-        self.sel.clear(); self._upd_badges()
-        self._last_click_idx=None
+        self._clear_selection()
+        self._upd_badges()
         self._prev_info.config(text="Cliquez sur une\nvignette…")
 
     def _rebind_mark_key(self):
@@ -1892,8 +1874,9 @@ class App(tk.Tk):
         targets=self._compute_targets()
         if not targets: messagebox.showinfo("Info","Aucune frame à extraire."); return
 
-        self.thumbs.clear(); self.thumb_refs.clear()
+        self.thumbs.clear(); self.thumb_refs.clear(); self.thumb_by_path.clear()
         self.thumb_wids.clear(); self.sel.clear(); self.marked.clear()
+        self._last_click_path=None
         self._upd_marked_badge(); self._clear_grid()
         self._prev_lbl.config(image=""); self._prev_ref=None
         self._prev_info.config(text="Extraction en cours…")
@@ -2102,11 +2085,13 @@ class App(tk.Tk):
         self._prog_lbl.config(text=f"{done}/{tot}  ·  {hms(t)}  🔲 noire ignorée")
 
     def _frame_done(self,img,fpath,t,done,tot,pct):
-        self.thumbs.append({"img":img,"path":fpath,"tc":t})
-        idx=len(self.thumbs)-1
+        entry={"img":img,"path":fpath,"tc":t}
+        self.thumbs.append(entry)
+        self.thumb_by_path[fpath]=entry            # v4
+        pos=len(self.thumbs)-1
         self._prog.set(pct); self._prog_lbl.config(text=f"{done}/{tot}  ·  {hms(t)}")
         self._badge_total.config(text=f"{len(self.thumbs)} image(s)")
-        self._add_thumb(idx)
+        self._add_thumb(fpath,pos)
         self._adjust_center_width()
 
     def _extract_done(self,black_tcs=None):
@@ -2121,19 +2106,16 @@ class App(tk.Tk):
             self._status("✔  Aucune frame noire détectée.",duration=6000)
 
     # ── Grille vignettes ──────────────────────────────────────────────────────
-    def _add_thumb(self, idx):
-        entry = self.thumbs[idx]
+    def _add_thumb(self, path, pos):
+        entry = self.thumb_by_path[path]
         sz = self.v_tsize.get()
         cols = self.v_cols.get()
-
         th = entry["img"].copy()
         th.thumbnail((sz, sz), Image.LANCZOS)
-
         # ── Composite de l'icône si marquée ───────────────────────────────────
-        if idx in self.marked:
+        if path in self.marked:
             if not hasattr(self, '_cached_check_pil'):
                 self._cached_check_pil = self._make_check_icon(size=22)
-
             ICON_SIZE = 22
             icon = self._cached_check_pil
             th_rgba = th.convert("RGBA")
@@ -2141,27 +2123,21 @@ class App(tk.Tk):
             y = 2
             th_rgba.paste(icon, (x, y), icon)
             th = th_rgba.convert("RGB")
-
         imgtk = ImageTk.PhotoImage(th)
-        self.thumb_refs.append(imgtk)
-
-        ri, ci = divmod(idx, cols)
+        self.thumb_refs[path] = imgtk              # v4 : dict par chemin
+        ri, ci = divmod(pos, cols)
         cell = tk.Frame(self._gf, bg=C["thumb_bg"], padx=4, pady=4, cursor="hand2")
         cell.grid(row=ri, column=ci, padx=5, pady=5)
-
         lbl = tk.Label(cell, image=imgtk, bg=C["thumb_bg"], bd=0, relief="flat",
-                    cursor="hand2", highlightthickness=2,
-                    highlightbackground=C["thumb_bg"], highlightcolor=C["thumb_bg"])
+                     cursor="hand2", highlightthickness=2,
+                     highlightbackground=C["thumb_bg"], highlightcolor=C["thumb_bg"])
         lbl.image = imgtk
         lbl.pack()
-
         tclbl = tk.Label(cell, text=hms(entry["tc"]), font=("Segoe UI", 8),
-                        fg=C["t3"], bg=C["thumb_bg"])
+                         fg=C["t3"], bg=C["thumb_bg"])
         tclbl.pack()
-
         for w in (cell, lbl, tclbl):
-            w._idx = idx
-
+            w._path = path                          # v4 : identité = chemin
         for w in (cell, lbl, tclbl):
             w.bind("<ButtonPress-1>",    self._on_thumb_press)
             w.bind("<Button-1>",         self._on_thumb_button1)
@@ -2171,8 +2147,7 @@ class App(tk.Tk):
             w.bind("<ButtonRelease-1>",  self._on_thumb_release)
             w.bind("<Enter>",            self._on_thumb_enter)
             w.bind("<Leave>",            self._on_thumb_leave)
-
-        self.thumb_wids[idx] = {"frame": cell, "label": lbl, "tc_lbl": tclbl}
+        self.thumb_wids[path] = {"frame": cell, "label": lbl, "tc_lbl": tclbl}
 
     # ── Redimensionnement ─────────────────────────────────────────────────────
     _fit_job=None
@@ -2262,9 +2237,11 @@ class App(tk.Tk):
         self._clear_grid()
         self.thumbs.clear()
         self.thumb_refs.clear()
+        self.thumb_by_path.clear()
         self.thumb_wids.clear()
         self.sel.clear()
         self.marked.clear()
+        self._last_click_path=None
         self._upd_marked_badge()
         self._prev_lbl.config(image="")
         self._prev_ref = None
@@ -2277,22 +2254,22 @@ class App(tk.Tk):
     def _rebuild_grid(self):
         self._clear_grid()
         self._loading_thumbs = True
-        for i in range(len(self.thumbs)): self._add_thumb(i)
+        for pos, entry in enumerate(self.thumbs):
+            self._add_thumb(entry["path"], pos)
         self._loading_thumbs = False
-        for i in self.sel:    self._set_sel(i,True)
-        for i in self.marked: self._update_mark_overlay(i)
+        for p in self.sel:    self._set_sel(p, True)
+        for p in self.marked: self._update_mark_overlay(p)
         if len(self.sel)==1: self._show_preview(next(iter(self.sel)))
         self._adjust_center_width()
-
-        # --- AJOUT : forcer le rafraîchissement du canvas ---
+        # --- forcer le rafraîchissement du canvas ---
         self._gf.update_idletasks()
         self._cv.configure(scrollregion=self._cv.bbox("all"))
         self._cv.yview_moveto(0)
 
     # ── Sélection ─────────────────────────────────────────────────────────────
-    def _thumb_hover(self,cell,idx,on):
+    def _thumb_hover(self,cell,path,on):
         try:
-            if not cell.winfo_exists() or idx in self.sel: return
+            if not cell.winfo_exists() or path in self.sel: return
             bg=C["thumb_hov"] if on else C["thumb_bg"]; cell.config(bg=bg)
             for ch in cell.winfo_children():
                 try: ch.config(bg=bg)
@@ -2301,27 +2278,24 @@ class App(tk.Tk):
 
     def _thumb_click(self,idx): self._click(idx)
 
-    def _get_idx_from_event(self, event):
-        """Retourne l'index stocké dans le widget ayant reçu l'événement."""
-        return event.widget._idx
+    def _get_path_from_event(self, event):
+        """v4 : retourne le chemin stocké dans le widget ayant reçu l'événement."""
+        return event.widget._path
 
     def _on_thumb_press(self, event):
         self.focus_set()
         self._drag_start_from_thumb(event)
 
     def _on_thumb_button1(self, event):
-        idx = self._get_idx_from_event(event)
-        self._click(idx)
+        self._click(self._get_path_from_event(event))
 
     def _on_thumb_ctrl_click(self, event):
-        idx = self._get_idx_from_event(event)
         self.focus_set()
-        self._ctrl_click(idx)
+        self._ctrl_click(self._get_path_from_event(event))
 
     def _on_thumb_shift_click(self, event):
-        idx = self._get_idx_from_event(event)
         self.focus_set()
-        self._shift_click(idx)
+        self._shift_click(self._get_path_from_event(event))
 
     def _on_thumb_motion(self, event):
         self._drag_motion_from_thumb(event)
@@ -2330,50 +2304,77 @@ class App(tk.Tk):
         self._drag_end_from_thumb(event)
 
     def _on_thumb_enter(self, event):
-        idx = self._get_idx_from_event(event)
-        cell = self.thumb_wids[idx]["frame"]
-        self._thumb_hover(cell, idx, True)
+        path = self._get_path_from_event(event)
+        cell = self.thumb_wids[path]["frame"]
+        self._thumb_hover(cell, path, True)
 
     def _on_thumb_leave(self, event):
-        idx = self._get_idx_from_event(event)
-        cell = self.thumb_wids[idx]["frame"]
-        self._thumb_hover(cell, idx, False)
+        path = self._get_path_from_event(event)
+        cell = self.thumb_wids[path]["frame"]
+        self._thumb_hover(cell, path, False)
 
-    def _click(self,idx):
-        if idx in self.sel:
-            self._set_sel(idx,False); self.sel.discard(idx); self._upd_badges()
-            if len(self.sel)==1: self._show_preview(next(iter(self.sel))); self._last_click_idx=next(iter(self.sel))
-            elif len(self.sel)==0: self._last_click_idx=None; self._prev_info.config(text="Cliquez sur une\nvignette…")
+    def _clear_selection(self):
+        """v4 : efface toute la sélection (les sets contiennent des chemins)."""
+        for p in list(self.sel):
+            self._set_sel(p, False)
+        self.sel.clear()
+        self._last_click_path = None
+
+    def _position_of(self, path):
+        """Position d'affichage d'un chemin dans self.thumbs, ou -1 si absent."""
+        entry = self.thumb_by_path.get(path)
+        if entry is None:
+            return -1
+        try:
+            return self.thumbs.index(entry)
+        except ValueError:
+            return -1
+
+    def _click(self,path):
+        if path in self.sel:
+            self._set_sel(path,False); self.sel.discard(path); self._upd_badges()
+            if len(self.sel)==1:
+                remaining=next(iter(self.sel))
+                self._show_preview(remaining); self._last_click_path=remaining
+            elif len(self.sel)==0:
+                self._last_click_path=None; self._prev_info.config(text="Cliquez sur une\nvignette…")
             return
-        for i in list(self.sel): self._set_sel(i,False)
-        self.sel.clear(); self.sel.add(idx); self._set_sel(idx,True)
-        self._last_click_idx=idx; self._upd_badges(); self._show_preview(idx)
+        self._clear_selection()
+        self.sel.add(path); self._set_sel(path,True)
+        self._last_click_path=path; self._upd_badges(); self._show_preview(path)
 
-    def _ctrl_click(self,idx):
-        if idx in self.sel: self.sel.discard(idx); self._set_sel(idx,False)
-        else:               self.sel.add(idx);     self._set_sel(idx,True)
+    def _ctrl_click(self,path):
+        if path in self.sel: self.sel.discard(path); self._set_sel(path,False)
+        else:                self.sel.add(path);     self._set_sel(path,True)
         self._upd_badges()
         if len(self.sel)==1: self._show_preview(next(iter(self.sel)))
         elif len(self.sel)>1:
             self._prev_lbl.config(image=""); self._prev_ref=None
             self._prev_info.config(text=f"Sélection multiple\n({len(self.sel)} images)\n\nAperçu désactivé.")
 
-    def _shift_click(self,idx):
-        anchor=self._last_click_idx
-        if anchor is None: self._click(idx); return
-        lo,hi=min(anchor,idx),max(anchor,idx)
-        for i in list(self.sel): self._set_sel(i,False)
-        self.sel.clear()
-        for i in range(lo,hi+1): self.sel.add(i); self._set_sel(i,True)
+    def _shift_click(self,path):
+        anchor=self._last_click_path
+        if anchor is None or anchor not in self.thumb_by_path:
+            self._click(path); return
+        order=[e["path"] for e in self.thumbs]
+        try:
+            a=order.index(anchor); b=order.index(path)
+        except ValueError:
+            self._click(path); return
+        lo,hi=min(a,b),max(a,b)
+        self._clear_selection()
+        for p in order[lo:hi+1]:
+            self.sel.add(p); self._set_sel(p,True)
+        self._last_click_path=path
         self._upd_badges()
         if len(self.sel)==1: self._show_preview(next(iter(self.sel)))
         else:
             self._prev_lbl.config(image=""); self._prev_ref=None
             self._prev_info.config(text=f"Sélection multiple\n({len(self.sel)} images)\n\nAperçu désactivé.")
 
-    def _set_sel(self,idx,on):
-        if idx not in self.thumb_wids: return
-        w=self.thumb_wids[idx]
+    def _set_sel(self,path,on):
+        if path not in self.thumb_wids: return
+        w=self.thumb_wids[path]
         bg=C["thumb_sel"] if on else C["thumb_bg"]; brd=C["sel_brd"] if on else C["thumb_bg"]
         w["frame"].config(bg=bg)
         w["label"].config(bg=bg,highlightthickness=2,highlightbackground=brd,highlightcolor=brd)
@@ -2399,86 +2400,43 @@ class App(tk.Tk):
             if not messagebox.askyesno("Supprimer",
                     f"Supprimer {n} image(s) sélectionnée(s) ?\nLes fichiers JPG seront supprimés."):
                 return
-
-        # Supprimer les fichiers et les entrées correspondantes
-        for idx in sorted(self.sel, reverse=True):
-            entry = self.thumbs[idx]
+        # v4 : identité = chemin → aucune renumérotation nécessaire
+        deleted_paths = list(self.sel)
+        deleted_set   = set(deleted_paths)
+        first_pos     = min(self._position_of(p) for p in deleted_paths)
+        # 1) Supprimer les fichiers + détruire les widgets
+        for path in deleted_paths:
             try:
-                if os.path.exists(entry["path"]):
-                    os.remove(entry["path"])
+                if os.path.exists(path):
+                    os.remove(path)
             except Exception as ex:
-                messagebox.showwarning("Erreur", f"Impossible de supprimer :\n{entry['path']}\n{ex}")
-            # Retirer de la liste
-            self.thumbs.pop(idx)
-            # Détruire les widgets
-            if idx in self.thumb_wids:
-                self.thumb_wids[idx]["frame"].destroy()
-                del self.thumb_wids[idx]
-
-        # Calculer l'index à sélectionner après suppression
-        deleted_indices = sorted(self.sel)
-        min_deleted = min(deleted_indices)
-        new_sel_idx = None
-        # Chercher le premier index non supprimé après la sélection
-        for i in range(min_deleted, len(self.thumbs)):
-            if i not in self.sel:
-                # Calculer son futur index après renumérotation
-                new_sel_idx = i - sum(1 for d in deleted_indices if d < i)
-                break
-        if new_sel_idx is None:
-            # Pas d'image après → chercher avant
-            for i in range(min_deleted - 1, -1, -1):
-                if i not in self.sel:
-                    new_sel_idx = i - sum(1 for d in deleted_indices if d < i)
-                    break
-
+                messagebox.showwarning("Erreur", f"Impossible de supprimer :\n{path}\n{ex}")
+            w = self.thumb_wids.pop(path, None)
+            if w:
+                w["frame"].destroy()
+            self.marked.discard(path)
+            self.thumb_refs.pop(path, None)
+            self.thumb_by_path.pop(path, None)
+        # 2) Reconstruire la liste ordonnée sans les supprimés
+        self.thumbs = [e for e in self.thumbs if e["path"] not in deleted_set]
         self.sel.clear()
-
-        # Si tout a été supprimé, on réinitialise tout
+        # 3) Plus rien → réinitialiser
         if not self.thumbs:
             self._clear_all_thumb_state()
             self._auto_save_config()
             return
-
-        # ----- Renumérotation des widgets restants -----
-        sorted_old_indices = sorted(self.thumb_wids.keys())
-        new_wids = {}
-        cols = self.v_cols.get()
-        for new_idx, old_idx in enumerate(sorted_old_indices):
-            wdata = self.thumb_wids[old_idx]
-            new_wids[new_idx] = wdata
-            # Mettre à jour l'index dans les widgets
-            for widget in (wdata["frame"], wdata["label"], wdata["tc_lbl"]):
-                try:
-                    widget._idx = new_idx
-                except AttributeError:
-                    pass  # Sécurité
-            # Repositionner dans la grille
-            ri, ci = divmod(new_idx, cols)
-            wdata["frame"].grid(row=ri, column=ci, padx=5, pady=5)
-        self.thumb_wids = new_wids
-
-        # Mettre à jour les marquages : on les reconstitue d'après les chemins
-        marked_paths = {self.thumbs[i]["path"] for i in self.marked if i < len(self.thumbs)}
-        self.marked = {i for i, e in enumerate(self.thumbs) if e["path"] in marked_paths}
-
-        # Mettre à jour l'interface
+        # 4) Repositionner + sélectionner le voisin le plus proche
+        self._reflow_grid()
+        new_pos  = min(first_pos, len(self.thumbs) - 1)
+        new_path = self.thumbs[new_pos]["path"]
+        self.sel.add(new_path)
+        self._set_sel(new_path, True)
+        self._last_click_path = new_path
         self._badge_total.config(text=f"{len(self.thumbs)} image(s)")
         self._upd_badges()
         self._upd_marked_badge()
-        self._prev_lbl.config(image="")
-        self._prev_ref = None
-
-        if new_sel_idx is not None and new_sel_idx < len(self.thumbs):
-            self.sel.add(new_sel_idx)
-            self._set_sel(new_sel_idx, True)
-            self._last_click_idx = new_sel_idx
-            self._upd_badges()
-            self._show_preview(new_sel_idx)
-            self._scroll_to_thumb(new_sel_idx)
-        else:
-            self._prev_info.config(text="Cliquez sur une\nvignette…")
-
+        self._show_preview(new_path)
+        self._scroll_to_thumb(new_path)
         self._auto_save_config()
 
     def _clear_output_dir(self):
@@ -2494,8 +2452,8 @@ class App(tk.Tk):
             try: os.remove(os.path.join(outdir,f))
             except Exception as ex: errors.append(f"{f}:{ex}")
         if errors: messagebox.showwarning("Erreurs","\n".join(errors))
-        self.thumbs.clear(); self.thumb_refs.clear(); self.thumb_wids.clear()
-        self.sel.clear(); self.marked.clear(); self._upd_marked_badge(); self._clear_grid()
+        self.thumbs.clear(); self.thumb_refs.clear(); self.thumb_by_path.clear(); self.thumb_wids.clear()
+        self.sel.clear(); self.marked.clear(); self._last_click_path=None; self._upd_marked_badge(); self._clear_grid()
         self._prev_lbl.config(image=""); self._prev_ref=None
         self._prev_info.config(text="Cliquez sur une\nvignette…")
         self._badge_total.config(text="0 image(s)"); self._badge_sel.config(text="")
@@ -2521,8 +2479,7 @@ class App(tk.Tk):
         if not self._drag_active:
             if abs(event.x_root-ox_r)<5 and abs(event.y_root-oy_r)<5: return
             self._drag_active=True
-            for i in list(self.sel): self._set_sel(i,False)
-            self.sel.clear()
+            self._clear_selection()
         self._do_drag(event.x_root,event.y_root,ox_cv,oy_cv)
 
     def _drag_motion_from_thumb(self,event):
@@ -2531,8 +2488,7 @@ class App(tk.Tk):
         if not self._drag_active:
             if abs(event.x_root-ox_r)<5 and abs(event.y_root-oy_r)<5: return
             self._drag_active=True
-            for i in list(self.sel): self._set_sel(i,False)
-            self.sel.clear()
+            self._clear_selection()
         self._do_drag(event.x_root,event.y_root,ox_cv,oy_cv)
 
     def _do_drag(self,x_root,y_root,ox_cv,oy_cv):
@@ -2544,16 +2500,16 @@ class App(tk.Tk):
         self._cv.create_rectangle(x1,y1,x2,y2,outline=C["accent"],fill="",width=2,dash=(6,3),tags="rb")
         self._cv.tag_raise("rb")
         gx=self._gf.winfo_x(); gy=self._gf.winfo_y(); new_sel=set()
-        for idx,w in self.thumb_wids.items():
+        for path,w in self.thumb_wids.items():
             cell=w["frame"]
             try:
                 if not cell.winfo_exists(): continue
                 cx0=cell.winfo_x()+gx; cy0=cell.winfo_y()+gy
                 cw=cell.winfo_width(); ch=cell.winfo_height()
-                if cx0<x2 and cx0+cw>x1 and cy0<y2 and cy0+ch>y1: new_sel.add(idx)
+                if cx0<x2 and cx0+cw>x1 and cy0<y2 and cy0+ch>y1: new_sel.add(path)
             except Exception: pass
-        for i in new_sel-self.sel:  self.sel.add(i);    self._set_sel(i,True)
-        for i in self.sel-new_sel:  self.sel.discard(i);self._set_sel(i,False)
+        for p in new_sel-self.sel:  self.sel.add(p);    self._set_sel(p,True)
+        for p in self.sel-new_sel:  self.sel.discard(p);self._set_sel(p,False)
         self._upd_badges()
         if len(self.sel)>1:
             self._prev_lbl.config(image=""); self._prev_ref=None
@@ -2581,8 +2537,7 @@ class App(tk.Tk):
                     cell.winfo_rooty()<=yr<=cell.winfo_rooty()+cell.winfo_height()): return
             except Exception: pass
         if self.sel:
-            for i in list(self.sel): self._set_sel(i,False)
-            self.sel.clear(); self._upd_badges(); self._last_click_idx=None
+            self._clear_selection(); self._upd_badges()
             self._prev_info.config(text="Cliquez sur une\nvignette…")
 
     # ── Marquage ──────────────────────────────────────────────────────────────
@@ -2591,9 +2546,9 @@ class App(tk.Tk):
         if isinstance(fw,(tk.Entry,DarkEntry)): return
         if not self.sel: return
         if self.sel.issubset(self.marked):
-            for idx in list(self.sel): self.marked.discard(idx); self._update_mark_overlay(idx)
+            for p in list(self.sel): self.marked.discard(p); self._update_mark_overlay(p)
         else:
-            for idx in self.sel: self.marked.add(idx); self._update_mark_overlay(idx)
+            for p in self.sel: self.marked.add(p); self._update_mark_overlay(p)
         self._upd_marked_badge(); self._auto_save_config()
 
     def _make_check_icon(self, size=22):
@@ -2619,21 +2574,18 @@ class App(tk.Tk):
 
         return img
 
-    def _update_mark_overlay(self, idx):
+    def _update_mark_overlay(self, path):
         """Recrée la vignette avec ou sans icône composite selon l'état marqué."""
-        if idx not in self.thumb_wids:
+        if path not in self.thumb_wids:
             return
-        w = self.thumb_wids[idx]
-        entry = self.thumbs[idx]
+        w = self.thumb_wids[path]
+        entry = self.thumb_by_path[path]
         sz = self.v_tsize.get()
-
         th = entry["img"].copy()
         th.thumbnail((sz, sz), Image.LANCZOS)
-
-        if idx in self.marked:
+        if path in self.marked:
             if not hasattr(self, '_cached_check_pil'):
                 self._cached_check_pil = self._make_check_icon(size=22)
-
             ICON_SIZE = 22
             icon = self._cached_check_pil
             th_rgba = th.convert("RGBA")
@@ -2641,34 +2593,32 @@ class App(tk.Tk):
             y = 2
             th_rgba.paste(icon, (x, y), icon)
             th = th_rgba.convert("RGB")
-
         imgtk = ImageTk.PhotoImage(th)
-        self.thumb_refs[idx] = imgtk
+        self.thumb_refs[path] = imgtk              # v4 : remplace la ref par chemin
         w["label"].config(image=imgtk)
         w["label"].image = imgtk
 
-    def _toggle_mark(self,idx):
-        if idx in self.marked: self.marked.discard(idx)
-        else: self.marked.add(idx)
-        self._update_mark_overlay(idx); self._upd_marked_badge(); self._auto_save_config()
+    def _toggle_mark(self,path):
+        if path in self.marked: self.marked.discard(path)
+        else: self.marked.add(path)
+        self._update_mark_overlay(path); self._upd_marked_badge(); self._auto_save_config()
 
     def _unmark_all(self):
-        for idx in list(self.marked): self.marked.discard(idx); self._update_mark_overlay(idx)
+        for p in list(self.marked): self.marked.discard(p); self._update_mark_overlay(p)
         self._upd_marked_badge(); self._auto_save_config()
 
     def _mark_selection(self):
         if not self.sel:
             self._status("⚠  Aucune image sélectionnée.")
             return
-        # Si toutes les sélectionnées sont déjà marquées → démarquer
         if self.sel.issubset(self.marked):
-            for idx in list(self.sel):
-                self.marked.discard(idx)
-                self._update_mark_overlay(idx)
+            for p in list(self.sel):
+                self.marked.discard(p)
+                self._update_mark_overlay(p)
         else:
-            for idx in list(self.sel):
-                self.marked.add(idx)
-                self._update_mark_overlay(idx)
+            for p in list(self.sel):
+                self.marked.add(p)
+                self._update_mark_overlay(p)
         self._upd_marked_badge()
         self._auto_save_config()
 
@@ -2693,17 +2643,19 @@ class App(tk.Tk):
             "mark_key":self.v_mark_key.get(),"hdr_tonemap":self.v_hdr_tonemap.get(),
             "last_video_dir": self._cfg.get("last_video_dir", ""),
             "last_work_dir": self._cfg.get("last_work_dir", ""),
-            "marked_files":[self.thumbs[i]["path"]            
-                            for i in sorted(self.marked) if i<len(self.thumbs)],
+            "marked_files": sorted(self.marked),
             "last_output_dir": self._cfg.get("last_output_dir", ""),
             "window_h": self.winfo_height(),
         })
 
     def _restore_marked(self):
-        saved=set(self._cfg.get("marked_files",[]))
+        saved = set(self._cfg.get("marked_files", []))
         if not saved: return
-        for idx,entry in enumerate(self.thumbs):
-            if entry["path"] in saved: self.marked.add(idx); self._update_mark_overlay(idx)
+        for entry in self.thumbs:
+            p = entry["path"]
+            if p in saved:
+                self.marked.add(p)
+                self._update_mark_overlay(p)
         self._upd_marked_badge()
 
     # ── Déplacement vers dossier de travail ───────────────────────────────────
@@ -2723,49 +2675,61 @@ class App(tk.Tk):
         return max_n+1
 
     def _move_to_workdir(self):
-        combined=self.sel|self.marked
-        if not combined: self._status("⚠  Aucune image sélectionnée ni marquée."); return
-        workdir=self.v_workdir.get().strip()
+        combined = self.sel | self.marked
+        if not combined:
+            self._status("⚠  Aucune image sélectionnée ni marquée."); return
+        workdir = self.v_workdir.get().strip()
         if not workdir: self._status("⚠  Dossier de Travail non défini."); return
         if not os.path.isdir(workdir): self._status(f"⚠  Dossier introuvable : {workdir}"); return
-        generic=self.v_generic.get().strip() or "capture"
-        indices=sorted(combined); n=len(indices); num=self._next_num_in_workdir(workdir,generic)
-        moves=[]
-        for idx in indices:
-            src=self.thumbs[idx]["path"]
+        generic = self.v_generic.get().strip() or "capture"
+        paths = sorted(combined)
+        n = len(paths)
+        num = self._next_num_in_workdir(workdir, generic)
+        moves = []
+        for src in paths:
             while True:
-                digits=2 if num<100 else 3
-                dst=os.path.join(workdir,f"{generic}_{num:0{digits}d}.jpg")
+                digits = 2 if num < 100 else 3
+                dst = os.path.join(workdir, f"{generic}_{num:0{digits}d}.jpg")
                 if not os.path.exists(dst): break
-                num+=1
-            moves.append((src,dst,idx)); num+=1
-        ok=0; errors=[]; moved=[]
-        for src,dst,idx in moves:
-            try: shutil.move(src,dst); ok+=1; moved.append(idx)
-            except Exception as ex: errors.append(f"{os.path.basename(src)} → {ex}")
-        if errors: messagebox.showwarning("Erreurs","\n".join(errors))
-        moved_paths={self.thumbs[i]["path"] for i in moved if i<len(self.thumbs)}
-        marked_paths={self.thumbs[i]["path"] for i in self.marked if i<len(self.thumbs)}-moved_paths
-        for idx in sorted(moved,reverse=True): self.thumbs.pop(idx)
-        self.sel.clear()
-        self.marked={i for i,e in enumerate(self.thumbs) if e["path"] in marked_paths}
-        self._upd_badges(); self._upd_marked_badge()
-        self._prev_lbl.config(image=""); self._prev_ref=None
+                num += 1
+            moves.append((src, dst)); num += 1
+        ok = 0; errors = []; moved_paths = set()
+        for src, dst in moves:
+            try:
+                shutil.move(src, dst); ok += 1; moved_paths.add(src)
+            except Exception as ex:
+                errors.append(f"{os.path.basename(src)} → {ex}")
+        if errors: messagebox.showwarning("Erreurs", "\n".join(errors))
+        # v4 : retirer les images déplacées (identité = chemin)
+        for path in moved_paths:
+            w = self.thumb_wids.pop(path, None)
+            if w: w["frame"].destroy()
+            self.sel.discard(path)
+            self.marked.discard(path)
+            self.thumb_refs.pop(path, None)
+            self.thumb_by_path.pop(path, None)
+        self.thumbs = [e for e in self.thumbs if e["path"] not in moved_paths]
+        self._last_click_path = None
+        self._reflow_grid()
+        self._prev_lbl.config(image=""); self._prev_ref = None
         self._prev_info.config(text="Cliquez sur une\nvignette…")
         self._badge_total.config(text=f"{len(self.thumbs)} image(s)")
-        self._rebuild_grid(); self._auto_save_config()
-        msg=f"✔  {ok}/{n} image(s) déplacée(s) vers {os.path.basename(workdir)}"
-        if errors: msg+=f"  ({len(errors)} erreur(s))"
-        self._status(msg,duration=6000)
+        self._upd_badges(); self._upd_marked_badge()
+        self._auto_save_config()
+        msg = f"✔  {ok}/{n} image(s) déplacée(s) vers {os.path.basename(workdir)}"
+        if errors: msg += f"  ({len(errors)} erreur(s))"
+        self._status(msg, duration=6000)
 
     # ── Aperçu ────────────────────────────────────────────────────────────────
-    def _show_preview(self,idx):
-        if idx is None or idx>=len(self.thumbs): return
-        entry=self.thumbs[idx]; sz=self.v_psize.get()
+    def _show_preview(self,path):
+        if path is None: return
+        entry=self.thumb_by_path.get(path)
+        if entry is None: return
+        sz=self.v_psize.get()
         try:
             full = Image.open(entry["path"])
-            ow, oh = full.size            # dims réelles lues dans l'en-tête, sans décodage
-            full.draft("RGB", (sz, sz))   # décodage allégé mais net pour l'aperçu
+            ow, oh = full.size
+            full.draft("RGB", (sz, sz))
             p = full.copy()
         except Exception:
             p = entry["img"].copy() if entry.get("img") is not None else None
@@ -2774,9 +2738,10 @@ class App(tk.Tk):
             return
         p.thumbnail((sz,sz),Image.LANCZOS)
         imgtk=ImageTk.PhotoImage(p); self._prev_ref=imgtk; self._prev_lbl.config(image=imgtk)
+        pos=self._position_of(path)+1
         self._prev_info.config(
             text=f"{os.path.basename(entry['path'])}\n\n"
-                f"⏱  {hms(entry['tc'])}\n📐  {ow}×{oh} px\n#{idx+1} / {len(self.thumbs)}")
+                 f"⏱  {hms(entry['tc'])}\n📐  {ow}×{oh} px\n#{pos} / {len(self.thumbs)}")
 
     # ── Rechargement dossier ──────────────────────────────────────────────────
     def _reload_extraction_folder(self):
@@ -2793,9 +2758,11 @@ class App(tk.Tk):
 
         self.thumbs.clear()
         self.thumb_refs.clear()
+        self.thumb_by_path.clear()
         self.thumb_wids.clear()
         self.sel.clear()
         self.marked.clear()
+        self._last_click_path=None
         self._upd_marked_badge()
         self._clear_grid()
         self._prog_lbl.config(text=f"Lecture du dossier ({len(jpgs)} fichier(s))…")
@@ -2808,9 +2775,11 @@ class App(tk.Tk):
     def _reflow_grid(self):
         """Repositionne les widgets existants dans la grille sans rien recréer."""
         cols = self.v_cols.get()
-        for idx, w in self.thumb_wids.items():
-            ri, ci = divmod(idx, cols)
-            w["frame"].grid(row=ri, column=ci, padx=5, pady=5)
+        for pos, entry in enumerate(self.thumbs):
+            w = self.thumb_wids.get(entry["path"])
+            if w:
+                ri, ci = divmod(pos, cols)
+                w["frame"].grid(row=ri, column=ci, padx=5, pady=5)
         self._adjust_center_width()
 
     def _refresh_folder(self):
@@ -2823,19 +2792,20 @@ class App(tk.Tk):
         self._reload_extraction_folder()
 
     def _reload_done(self, loaded):
-        # Stocker toutes les données sans encore créer de widgets
         for img, fpath, tc in loaded:
-            self.thumbs.append({"img": img, "path": fpath, "tc": tc})
+            entry = {"img": img, "path": fpath, "tc": tc}
+            self.thumbs.append(entry)
+            self.thumb_by_path[fpath] = entry
         self._badge_total.config(text=f"{len(self.thumbs)} image(s)")
         self._prog_lbl.config(text=f"Chargement des vignettes… 0 / {len(self.thumbs)}")
-        # Lancer la création progressive des vignettes
         self._build_thumbs_async(0)
 
     def _reload_done_lazy(self, entries):
         """Stocke les métadonnées sans charger les pixels, puis construit les vignettes une par une."""
         for fpath, tc in entries:
-            # Image à None : sera chargée à la demande dans _add_thumb
-            self.thumbs.append({"img": None, "path": fpath, "tc": tc})
+            entry = {"img": None, "path": fpath, "tc": tc}
+            self.thumbs.append(entry)
+            self.thumb_by_path[fpath] = entry
         self._badge_total.config(text=f"{len(self.thumbs)} image(s)")
         self._prog_lbl.config(text=f"Chargement des vignettes… 0 / {len(self.thumbs)}")
         self._build_thumbs_async(0)
@@ -2856,7 +2826,7 @@ class App(tk.Tk):
                     entry["img"] = im.copy()
                 except Exception:
                     continue
-            self._add_thumb(i)
+            self._add_thumb(entry["path"], i)
         self._prog_lbl.config(text=f"Chargement des vignettes… {end_idx} / {len(self.thumbs)}")
         if end_idx < len(self.thumbs):
             self.after(1, self._build_thumbs_async, end_idx)
@@ -2926,8 +2896,7 @@ class App(tk.Tk):
             "hdr_tonemap":self.v_hdr_tonemap.get(),
             "last_video_dir": self._cfg.get("last_video_dir", ""),
             "last_work_dir": self._cfg.get("last_work_dir", ""),
-            "marked_files":[self.thumbs[i]["path"]
-                            for i in sorted(self.marked) if i<len(self.thumbs)],
+            "marked_files": sorted(self.marked),
             "last_output_dir": self._cfg.get("last_output_dir", ""),
             "window_h": self.winfo_height(),
         })
