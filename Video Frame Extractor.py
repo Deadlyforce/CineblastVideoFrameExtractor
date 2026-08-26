@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, asdict
 from logging.handlers import RotatingFileHandler
 from tkinter import ttk, filedialog, messagebox
+from tkinter.font import Font
 import cv2
 import numpy as np
 from PIL import Image, ImageTk
@@ -153,6 +154,18 @@ FFMPEG_WORKERS = 3   # v4.1 : nb de ffmpeg en parallèle (passe à 4 si SSD + CP
 # ─────────────────────────────────────────────────────────────────────────────
 #  Helpers
 # ─────────────────────────────────────────────────────────────────────────────
+
+_FONT_CACHE = {}
+def _get_font(font_tuple):
+    """v4.6 : cache d'objets Font. La création d'une Font (métriques Tcl) est
+    coûteuse ; la mesure de texte est rapide. Une Font par (famille, taille, graisse)."""
+    key = (font_tuple[0], font_tuple[1], font_tuple[2] if len(font_tuple) > 2 else "normal")
+    f = _FONT_CACHE.get(key)
+    if f is None:
+        f = Font(family=key[0], size=key[1], weight=key[2])
+        _FONT_CACHE[key] = f
+    return f
+
 def hms(s):
     s = int(max(0, s))
     h, r = divmod(s, 3600)
@@ -499,10 +512,7 @@ class DarkButton(tk.Canvas):
         if available <= 10:
             self.text_display = "…"
             return
-        # Mesure approximative
-        # Utiliser tkinter.Font pour une mesure plus précise
-        from tkinter.font import Font
-        font = Font(family=self.font[0], size=self.font[1], weight=self.font[2] if len(self.font)>2 else "normal")
+        font = _get_font(self.font)   # v4.6 : cache — plus de Font() recréée
         text_width = font.measure(self.full_text)
         if text_width <= available:
             self.text_display = self.full_text
@@ -1081,7 +1091,7 @@ class App(tk.Tk):
         footer.grid(row=2,column=0,sticky="ew"); footer.columnconfigure(0,weight=1)
         HSep(footer).grid(row=0,column=0,sticky="ew")
         DarkButton(footer,"💾  Sauvegarder la configuration",self._save_config_action,
-                   style="ghost",width=240,height=32,font=F_SMALL).grid(row=1,column=0,pady=8)
+                   style="ghost",width=0,height=32,font=F_SMALL).grid(row=1,column=0,sticky="ew",padx=14,pady=8)
 
     def _build_info_block(self, inner, PAD):
         """Remplace la construction du bloc d'infos dans _build_left_content."""
@@ -1362,33 +1372,35 @@ class App(tk.Tk):
 
         # Taille fenêtre
         row=self._sect(inner,row,"Taille de la fenêtre")
-        wf=tk.Frame(inner,bg=C["bg"]); wf.grid(row=row,column=0,sticky="w",padx=PAD,pady=(2,10)); row+=1
+        wf=tk.Frame(inner,bg=C["bg"]); wf.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(2,10)); row+=1
+        wf.columnconfigure(1,weight=1)   # v4.6 : la colonne du bouton absorbe l'espace restant
         self._v_winsize_var=tk.StringVar(value=self.v_winsize.get())
         _saved_ws=self.v_winsize.get()
         _winsize_list=WINDOW_SIZES if _saved_ws in WINDOW_SIZES else WINDOW_SIZES+[_saved_ws]
         self._winsize_combo=RoundedCombo(wf,_winsize_list,self._v_winsize_var,width=120,bg=C["bg"])
-        self._winsize_combo.pack(side="left")
+        self._winsize_combo.grid(row=0,column=0,sticky="w")
         DarkButton(wf,"Appliquer",
                    lambda:(self.v_winsize.set(self._v_winsize_var.get()),
                            self._apply_window_size(self._v_winsize_var.get())),
-                   width=76,height=28).pack(side="left",padx=(8,0))
+                   width=0,height=28).grid(row=0,column=1,sticky="ew",padx=(8,0))
         HSep(inner).grid(row=row,column=0,sticky="ew",padx=PAD,pady=6); row+=1
 
         # Actions
         row=self._sect(inner,row,"Actions")
-        act=tk.Frame(inner,bg=C["bg"]); act.grid(row=row,column=0,sticky="w",padx=PAD,pady=(4,4)); row+=1
-        BTN_W=110; GAP=6; MAIN_W=BTN_W*2+GAP
+        act=tk.Frame(inner,bg=C["bg"]); act.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(4,4)); row+=1
+        act.columnconfigure(0,weight=1); act.columnconfigure(1,weight=1)   # v4.6 : les 2 colonnes absorbent l'espace
+        GAP=6
         self._run_btn=DarkButton(act,"▶  Extraire les frames",self._start_extraction,
-                                 style="accent",width=MAIN_W,height=36,font=F_BOLD)
-        self._run_btn.grid(row=0,column=0,columnspan=2,pady=(0,5))
+                                 style="accent",width=0,height=36,font=F_BOLD)
+        self._run_btn.grid(row=0,column=0,columnspan=2,sticky="ew",pady=(0,5))
         self._cancel_btn=DarkButton(act,"✕  Annuler",self._cancel_extraction,
-                                    style="ghost",width=BTN_W,height=30)
-        self._cancel_btn.grid(row=1,column=0,padx=(0,GAP)); self._cancel_btn.set_state("disabled")
+                                   style="ghost",width=0,height=30)
+        self._cancel_btn.grid(row=1,column=0,sticky="ew",padx=(0,GAP)); self._cancel_btn.set_state("disabled")
         self._del_btn=DarkButton(act,"🗑  Supprimer",self._delete_selected,
-                                 style="danger",width=BTN_W,height=30)
-        self._del_btn.grid(row=1,column=1); self._del_btn.set_state("disabled")
+                                 style="danger",width=0,height=30)
+        self._del_btn.grid(row=1,column=1,sticky="ew"); self._del_btn.set_state("disabled")
         DarkButton(act,"🗂  Vider le dossier d'extraction",self._clear_output_dir,
-                   style="danger",width=MAIN_W,height=30).grid(row=2,column=0,columnspan=2,pady=(5,0))
+                   style="danger",width=0,height=30).grid(row=2,column=0,columnspan=2,sticky="ew",pady=(5,0))
 
         chk=tk.Frame(inner,bg=C["bg"]); chk.grid(row=row,column=0,sticky="w",padx=PAD,pady=(6,0)); row+=1
         tk.Checkbutton(chk,text="Demander confirmation avant suppression",
@@ -1655,20 +1667,22 @@ class App(tk.Tk):
             pass
 
     def _global_click_deselect(self,event):
+        """v4.6 : désélectionne si le clic est hors de toute vignette.
+        Optimisé : on remonte la hiérarchie du widget cliqué (0 appel Tcl de
+        géométrie) au lieu de tester les 4 coordonnées de chaque vignette."""
         if not self.sel: return
         w=event.widget
         KEEP=(tk.Entry,DarkEntry,DarkButton,tk.Scale,tk.Checkbutton,
               ttk.Scrollbar,tk.Scrollbar,tk.Menu,PillSelector,RoundedCombo)
         if isinstance(w,KEEP): return
-        xr,yr=event.x_root,event.y_root
-        for wdata in self.thumb_wids.values():
-            cell=wdata["frame"]
-            try:
-                if not cell.winfo_exists(): continue
-                if (cell.winfo_rootx()<=xr<=cell.winfo_rootx()+cell.winfo_width() and
-                    cell.winfo_rooty()<=yr<=cell.winfo_rooty()+cell.winfo_height()):
-                    return
-            except Exception: pass
+        # v4.6 : le clic est-il dans une vignette ? Chaque cellule/label de
+        # vignette porte un attribut _path (chantier n°1) : on remonte les
+        # parents jusqu'à le trouver (3-5 itérations Python, aucun winfo_*).
+        cur=w
+        while cur is not None:
+            if getattr(cur,"_path",None) is not None:
+                return
+            cur=getattr(cur,"master",None)
         self._clear_selection()
         self._upd_badges()
         self._prev_info.config(text="Cliquez sur une\nvignette…")
