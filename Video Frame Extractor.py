@@ -151,6 +151,11 @@ LEFT_MIN_W   = 300
 WINDOW_SIZES = ["auto", "1920x1200", "1920x1080", "1280x800", "1280x720"]
 FFMPEG_WORKERS = 3   # v4.1 : nb de ffmpeg en parallèle (passe à 4 si SSD + CPU récent)
 
+# v4.7 (chantier 8) : couture pour la grille virtualisée.
+# False = grille historique (1 vignette = 3 widgets).
+# True  = canvas fenêtré avec recyclage (activé seulement après validation).
+GRID_VIRTUAL = False
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  Helpers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -897,6 +902,201 @@ def is_black_frame(arr_rgb, threshold=5):
     sample = arr_rgb[::8, ::8]
     lum = 0.299*sample[:,:,0] + 0.587*sample[:,:,1] + 0.114*sample[:,:,2]
     return float(lum.mean()) < threshold
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Grille virtualisée — composant isolé (v4.7 / E65)
+# ─────────────────────────────────────────────────────────────────────────────
+class VirtualThumbGrid:
+    """v4.7 (chantier 8, E65) : composant isolé de grille virtualisée.
+
+    Ce composant prépare le rendu canvas fenêtré : il ne dessine que la zone
+    visible et recycle un cache de PhotoImage. Il n'est pas encore branché
+    dans l'interface à cette étape.
+    """
+
+    def __init__(self, canvas, app):
+        self.canvas = canvas
+        self.app = app
+
+        # Cache PhotoImage : path -> (thumb_width, PhotoImage)
+        self._photo_cache = {}
+
+        # Anti-mitrafouillage : un seul redraw programmé à la fois
+        self._scheduled = False
+
+        # Métriques de layout provisoires, proches de la grille actuelle
+        self._pad_x = 9
+        self._pad_y = 10
+        self._text_h = 20
+
+    # ------------------------------------------------------------------
+    # API publique prévue pour la suite du chantier
+    # ------------------------------------------------------------------
+    def reload(self):
+        self.refresh()
+
+    def refresh(self):
+        if self._scheduled:
+            return
+        self._scheduled = True
+        try:
+            self.canvas.after_idle(self._redraw)
+        except Exception:
+            self._scheduled = False
+
+    # ------------------------------------------------------------------
+    # Layout
+    # ------------------------------------------------------------------
+    def _metrics(self):
+        try:
+            cols = max(1, int(self.app.v_cols.get()))
+        except Exception:
+            cols = 4
+
+        try:
+            thumb_w = max(40, int(self.app.v_tsize.get()))
+        except Exception:
+            thumb_w = 150
+
+        cell_w = thumb_w + 2 * self._pad_x
+        cell_h = thumb_w + self._text_h + 2 * self._pad_y
+        return cols, thumb_w, cell_w, cell_h
+
+    def _row_count(self, count, cols):
+        if count <= 0:
+            return 0
+        return (count + cols - 1) // cols
+
+    def _update_scrollregion(self):
+        try:
+            count = len(self.app.thumbs)
+        except Exception:
+            count = 0
+
+        cols, thumb_w, cell_w, cell_h = self._metrics()
+        rows = self._row_count(count, cols)
+
+        width = max(self.canvas.winfo_width(), cols * cell_w + 1)
+        height = rows * cell_h + 1
+
+        self.canvas.configure(scrollregion=(0, 0, width, height))
+
+    # ------------------------------------------------------------------
+    # Rendu fenêtré
+    # ------------------------------------------------------------------
+    def _redraw(self):
+        self._scheduled = False
+
+        try:
+            if not self.canvas.winfo_exists():
+                return
+        except Exception:
+            return
+
+        self._update_scrollregion()
+        self.canvas.delete("vt")
+
+        try:
+            count = len(self.app.thumbs)
+        except Exception:
+            count = 0
+
+        if count == 0:
+            self._photo_cache.clear()
+            return
+
+        cols, thumb_w, cell_w, cell_h = self._metrics()
+
+        try:
+            top = self.canvas.canvasy(0)
+            bottom = self.canvas.canvasy(max(1, self.canvas.winfo_height()))
+        except Exception:
+            top, bottom = 0, 1
+
+        buffer = cell_h * 2
+        top = max(0, top - buffer)
+        bottom += buffer
+
+        first_row = max(0, int(top // cell_h))
+        last_row = min(self._row_count(count, cols) - 1, int(bottom // cell_h))
+
+        first_idx = first_row * cols
+        last_idx = min(count - 1, (last_row + 1) * cols - 1)
+
+        visible = []
+
+        for idx in range(first_idx, last_idx + 1):
+            try:
+                entry = self.app.thumbs[idx]
+            except IndexError:
+                continue
+
+            path = entry.get("path", "")
+            if not path:
+                continue
+
+            visible.append(path)
+
+            row, col = divmod(idx, cols)
+            x_center = col * cell_w + cell_w // 2
+            y_img_center = row * cell_h + self._pad_y + thumb_w // 2
+
+            imgtk = self._photo_for(entry, thumb_w)
+            if imgtk is not None:
+                self.canvas.create_image(
+                    x_center,
+                    y_img_center,
+                    image=imgtk,
+                    anchor="center",
+                    tags=("vt", f"vt::{path}"),
+                )
+
+            self.canvas.create_text(
+                x_center,
+                row * cell_h + self._pad_y + thumb_w + 5,
+                text=hms(entry.get("tc", 0)),
+                font=F_SMALL,
+                fill=C["t3"],
+                anchor="n",
+                tags=("vt", f"vt::{path}"),
+            )
+
+        self._prune_cache(set(visible))
+
+    # ------------------------------------------------------------------
+    # Cache PhotoImage fenêtré
+    # ------------------------------------------------------------------
+    def _photo_for(self, entry, thumb_w):
+        path = entry.get("path", "")
+
+        cached = self._photo_cache.get(path)
+        if cached is not None and cached[0] == thumb_w:
+            return cached[1]
+
+        img = entry.get("img")
+        if img is None:
+            try:
+                im = Image.open(path)
+                im.draft("RGB", (thumb_w, thumb_w))
+                img = im.copy()
+            except Exception:
+                return None
+
+        try:
+            th = img.copy()
+            th.thumbnail((thumb_w, thumb_w), Image.LANCZOS)
+            imgtk = ImageTk.PhotoImage(th)
+        except Exception:
+            return None
+
+        self._photo_cache[path] = (thumb_w, imgtk)
+        return imgtk
+
+    def _prune_cache(self, visible_paths):
+        for path in list(self._photo_cache.keys()):
+            if path not in visible_paths:
+                self._photo_cache.pop(path, None)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
