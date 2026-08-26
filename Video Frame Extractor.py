@@ -8,7 +8,8 @@ Dépendances : pip install opencv-python Pillow numpy
               ffmpeg requis (brew/apt/winget install ffmpeg)
 """
 
-import os, json, threading, tkinter as tk, subprocess, shutil, tempfile
+import os, json, threading, tkinter as tk, subprocess, shutil, tempfile, time
+from concurrent.futures import ThreadPoolExecutor
 from tkinter import ttk, filedialog, messagebox
 import cv2
 import numpy as np
@@ -97,6 +98,7 @@ F_SECT  = ("Segoe UI",           8)
 
 LEFT_MIN_W   = 300
 WINDOW_SIZES = ["auto", "1920x1200", "1920x1080", "1280x800", "1280x720"]
+FFMPEG_WORKERS = 3   # v4.1 : nb de ffmpeg en parallèle (passe à 4 si SSD + CPU récent)
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Helpers
@@ -1883,6 +1885,9 @@ class App(tk.Tk):
         self._badge_total.config(text="0 image(s)"); self._badge_sel.config(text="")
         self._del_btn.set_state("disabled"); self._run_btn.set_state("disabled")
         self._cancel_btn.set_state("normal"); self._cancel=False
+        # v4.1 : état du flush ordonné (les workers terminent dans le désordre)
+        self._next_flush=0; self._flushed=0; self._flush_tot=len(targets)
+        self._pending_results={}
         self._prog.set(0); self._prog_lbl.config(text="Initialisation…")
 
         threading.Thread(target=self._worker,
@@ -1892,6 +1897,46 @@ class App(tk.Tk):
     def _cancel_extraction(self):
         self._cancel=True; self._cancel_btn.set_state("disabled")
         self._prog_lbl.config(text="Annulation…")
+
+    def _run_ffmpeg(self, cmd, timeout):
+        """v4.1 : lance ffmpeg via Popen et surveille :
+           - self._cancel → tue le processus en cours (annulation effective)
+           - le timeout   → tue le processus bloqué
+           Retourne le returncode (0 = succès), -1 sinon."""
+        try:
+            proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL)
+        except Exception:
+            return -1
+        deadline = time.time() + timeout
+        try:
+            while True:
+                if self._cancel:
+                    proc.terminate()
+                    try: proc.wait(timeout=3)
+                    except Exception: proc.kill()
+                    return -1
+                rc = proc.poll()
+                if rc is not None:
+                    return rc
+                if time.time() > deadline:
+                    proc.terminate()
+                    try: proc.wait(timeout=3)
+                    except Exception: proc.kill()
+                    return -1
+                time.sleep(0.05)
+        except Exception:
+            try: proc.kill()
+            except Exception: pass
+            return -1
+
+    @staticmethod
+    def _tmp_ok(tmp_path):
+        """Le fichier temporaire existe et n'est pas vide."""
+        try:
+            return os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0
+        except Exception:
+            return False
 
     def _worker(self,vpath,outdir,targets):
         black_tcs=[]
@@ -1905,116 +1950,89 @@ class App(tk.Tk):
     #  WORKER FFMPEG — v3.0 : pipeline HDR→SDR si HDR détecté
     # ══════════════════════════════════════════════════════════════════════════
     def _worker_ffmpeg(self,vpath,outdir,targets,black_tcs):
-        tot=len(targets)
+        # v4.1 : le flush ordonné (thread principal) alimente cette liste
+        self._flush_black_tcs = black_tcs
         info=self.video_info
         disp_w=info.get("disp_w",info["width"])
         disp_h=info.get("disp_h",info["height"])
         sar_applied=info.get("sar_applied",False)
         do_filter=self.v_black_filter.get()
         base=os.path.splitext(os.path.basename(vpath))[0]
-        saved=0
-
-        # Paramètres HDR
         hdr_info   = self._hdr_info
         is_hdr     = hdr_info.get("is_hdr", False)
         tonemap    = self.v_hdr_tonemap.get()
-
-        # Test zscale une seule fois par extraction
         if is_hdr and self._zscale_ok is None:
             self._zscale_ok = zscale_available()
 
-        for i,t in enumerate(targets):
-            if self._cancel: break
-
+        def task(i, t):
+            """Extrait la frame n°i (timestamp t) — tourne dans un thread du pool."""
+            if self._cancel:
+                self.after(0, self._on_worker_result, i, "fail", None, "", t)
+                return
             tmp_fd,tmp_path=tempfile.mkstemp(suffix=".jpg",prefix="vfe_")
             os.close(tmp_fd)
             try: os.remove(tmp_path)
             except Exception: pass
-
             ok=False
-
             if is_hdr:
-                # ── Pipeline HDR→SDR ──────────────────────────────────────
+                # ── Pipeline HDR→SDR (cascade de fallback identique) ──────
                 if self._zscale_ok:
                     cmd=build_ffmpeg_cmd_hdr(vpath,t,tmp_path,disp_w,disp_h,
                                              sar_applied,hdr_info,tonemap)
-                    try:
-                        r=subprocess.run(cmd,capture_output=True,timeout=60)
-                        ok=(r.returncode==0 and os.path.exists(tmp_path)
-                            and os.path.getsize(tmp_path)>0)
-                    except Exception: pass
-
-                if not ok:
-                    # Fallback HDR sans zscale (colorspace filter)
+                    ok = self._run_ffmpeg(cmd, timeout=60) == 0 and self._tmp_ok(tmp_path)
+                if not ok and not self._cancel:
                     cmd2=build_ffmpeg_cmd_hdr_fallback(vpath,t,tmp_path,disp_w,disp_h,sar_applied)
-                    try:
-                        r2=subprocess.run(cmd2,capture_output=True,timeout=60)
-                        ok=(r2.returncode==0 and os.path.exists(tmp_path)
-                            and os.path.getsize(tmp_path)>0)
-                    except Exception: pass
-
-                if not ok:
-                    # Dernier recours : commande SDR standard
+                    ok = self._run_ffmpeg(cmd2, timeout=60) == 0 and self._tmp_ok(tmp_path)
+                if not ok and not self._cancel:
                     cmd3=build_ffmpeg_cmd(vpath,t,tmp_path,disp_w,disp_h,sar_applied)
-                    try:
-                        r3=subprocess.run(cmd3,capture_output=True,timeout=30)
-                        ok=(r3.returncode==0 and os.path.exists(tmp_path)
-                            and os.path.getsize(tmp_path)>0)
-                    except Exception: pass
-
+                    ok = self._run_ffmpeg(cmd3, timeout=30) == 0 and self._tmp_ok(tmp_path)
             else:
-                # ── Pipeline SDR standard (identique v2.9) ────────────────
+                # ── Pipeline SDR standard ─────────────────────────────────
                 cmd=build_ffmpeg_cmd(vpath,t,tmp_path,disp_w,disp_h,sar_applied)
-                try:
-                    r=subprocess.run(cmd,capture_output=True,timeout=30)
-                    ok=(r.returncode==0 and os.path.exists(tmp_path)
-                        and os.path.getsize(tmp_path)>0)
-                except Exception: pass
-
-                if not ok:
+                ok = self._run_ffmpeg(cmd, timeout=30) == 0 and self._tmp_ok(tmp_path)
+                if not ok and not self._cancel:
                     cmd2=build_ffmpeg_cmd_fallback(vpath,t,tmp_path,disp_w,disp_h,sar_applied)
-                    try:
-                        r2=subprocess.run(cmd2,capture_output=True,timeout=30)
-                        ok=(r2.returncode==0 and os.path.exists(tmp_path)
-                            and os.path.getsize(tmp_path)>0)
-                    except Exception: pass
-
-            pct=(i+1)/tot*100
+                    ok = self._run_ffmpeg(cmd2, timeout=30) == 0 and self._tmp_ok(tmp_path)
             if not ok:
                 try: os.remove(tmp_path)
                 except Exception: pass
-                continue
-
-            # Relire avec Pillow
+                self.after(0, self._on_worker_result, i, "fail", None, "", t)
+                return
             try:
                 img=Image.open(tmp_path).copy()
             except Exception:
                 try: os.remove(tmp_path)
                 except Exception: pass
-                continue
-
-            # Filtre frame noire
+                self.after(0, self._on_worker_result, i, "fail", None, "", t)
+                return
             if do_filter:
                 arr=np.array(img)
                 if is_black_frame(arr,threshold=5):
-                    black_tcs.append(t)
                     try: os.remove(tmp_path)
                     except Exception: pass
-                    self.after(0,self._black_skipped,t,i+1,tot,pct)
-                    continue
-
-            # Déplacement vers dossier de sortie
-            saved+=1
-            fname=f"{base}_{saved:04d}_{tc_str(t)}.jpg"
+                    self.after(0, self._on_worker_result, i, "black", None, "", t)
+                    return
+            # v4.1 : numéro = position dans le plan d'extraction.
+            # Ordre chronologique garanti même si les workers finissent
+            # dans le désordre. Trous possibles si des frames noires
+            # sont filtrées (comportement assumé).
+            fname=f"{base}_{i+1:04d}_{tc_str(t)}.jpg"
             fpath=os.path.join(outdir,fname)
             try:
                 shutil.move(tmp_path,fpath)
             except Exception:
                 try: os.remove(tmp_path)
                 except Exception: pass
-                continue
+                self.after(0, self._on_worker_result, i, "fail", None, "", t)
+                return
+            self.after(0, self._on_worker_result, i, "ok", img, fpath, t)
 
-            self.after(0,self._frame_done,img,fpath,t,i+1,tot,pct)
+        # v4.1 : FFMPEG_WORKERS ffmpeg en parallèle (lecture seule du même fichier)
+        with ThreadPoolExecutor(max_workers=FFMPEG_WORKERS) as ex:
+            futures=[ex.submit(task,i,t) for i,t in enumerate(targets)]
+            for f in futures:
+                try: f.result()
+                except Exception: pass
 
     # ── Fallback OpenCV ───────────────────────────────────────────────────────
     def _worker_opencv(self,vpath,outdir,targets,black_tcs):
@@ -2026,7 +2044,6 @@ class App(tk.Tk):
         sar_applied=info.get("sar_applied",False)
         do_filter=self.v_black_filter.get()
         base=os.path.splitext(os.path.basename(vpath))[0]
-        saved=0
         color_limited=self._detect_limited_range_opencv(vpath,cap)
 
         for i,t in enumerate(targets):
@@ -2047,8 +2064,7 @@ class App(tk.Tk):
             img=Image.fromarray(cv2.cvtColor(frame,cv2.COLOR_BGR2RGB))
             if sar_applied and (disp_w,disp_h)!=(img.width,img.height):
                 img=img.resize((disp_w,disp_h),Image.LANCZOS)
-            saved+=1
-            fname=f"{base}_{saved:04d}_{tc_str(t)}.jpg"
+            fname=f"{base}_{i+1:04d}_{tc_str(t)}.jpg"   # v4.1 : numéro = position dans le plan
             fpath=os.path.join(outdir,fname)
             img.save(fpath,"JPEG",quality=95,subsampling=0)
             self.after(0,self._frame_done,img,fpath,t,i+1,tot,(i+1)/tot*100)
@@ -2083,6 +2099,24 @@ class App(tk.Tk):
     def _black_skipped(self,t,done,tot,pct):
         self._prog.set(pct)
         self._prog_lbl.config(text=f"{done}/{tot}  ·  {hms(t)}  🔲 noire ignorée")
+
+    def _on_worker_result(self, i, kind, img, fpath, t):
+        """v4.1 : résultat d'un worker ffmpeg (kind = "ok" / "black" / "fail").
+        Les workers terminent dans le désordre : on bufferise puis on affiche
+        strictement dans l'ordre du plan, pour garder la grille chronologique."""
+        self._pending_results[i] = (kind, img, fpath, t)
+        while self._next_flush in self._pending_results:
+            k, im, fp, tc = self._pending_results.pop(self._next_flush)
+            self._flushed += 1
+            pct = self._flushed / max(1, self._flush_tot) * 100
+            if k == "ok":
+                self._frame_done(im, fp, tc, self._flushed, self._flush_tot, pct)
+            elif k == "black":
+                self._flush_black_tcs.append(tc)
+                self._black_skipped(tc, self._flushed, self._flush_tot, pct)
+            # k == "fail" : avance silencieusement
+            # (la visibilité des échecs arrive au chantier n°6)
+            self._next_flush += 1
 
     def _frame_done(self,img,fpath,t,done,tot,pct):
         entry={"img":img,"path":fpath,"tc":t}
