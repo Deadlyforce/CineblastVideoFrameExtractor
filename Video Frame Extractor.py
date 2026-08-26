@@ -154,7 +154,7 @@ FFMPEG_WORKERS = 3   # v4.1 : nb de ffmpeg en parallèle (passe à 4 si SSD + CP
 # v4.7 (chantier 8) : couture pour la grille virtualisée.
 # False = grille historique (1 vignette = 3 widgets).
 # True  = canvas fenêtré avec recyclage (activé seulement après validation).
-GRID_VIRTUAL = False
+GRID_VIRTUAL = True
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Helpers
@@ -987,10 +987,28 @@ class VirtualThumbGrid:
         cols, thumb_w, thumb_h, cell_w, cell_h = self._metrics()
         rows = self._row_count(count, cols)
 
-        width = max(self.canvas.winfo_width(), cols * cell_w + 1)
-        height = rows * cell_h + 1
+        try:
+            canvas_w = max(1, self.canvas.winfo_width())
+        except Exception:
+            canvas_w = 1
+
+        try:
+            canvas_h = max(1, self.canvas.winfo_height())
+        except Exception:
+            canvas_h = 1
+
+        content_h = rows * cell_h + 1
+
+        width = max(canvas_w, cols * cell_w + 1)
+        height = max(canvas_h, content_h)
 
         self.canvas.configure(scrollregion=(0, 0, width, height))
+
+        if content_h <= canvas_h:
+            try:
+                self.canvas.yview_moveto(0)
+            except Exception:
+                pass
 
     def _redraw(self):
         self._scheduled = False
@@ -1065,14 +1083,14 @@ class VirtualThumbGrid:
                     fill=C["thumb_sel"],
                     outline=C["sel_brd"],
                     width=1,
-                    tags=("vt", f"vt::{path}"),
+                    tags=("vt", f"vt::{path}", "vtbg"),
                 )
             else:
                 self.canvas.create_rectangle(
                     rx0, ry0, rx1, ry1,
                     fill=C["thumb_bg"],
                     outline="",
-                    tags=("vt", f"vt::{path}"),
+                    tags=("vt", f"vt::{path}", "vtbg"),
                 )
 
             imgtk = self._photo_for(entry, thumb_w, thumb_h)
@@ -1147,6 +1165,100 @@ class VirtualThumbGrid:
         for path in list(self._photo_cache.keys()):
             if path not in visible_paths:
                 self._photo_cache.pop(path, None)
+
+    def update_selection(self):
+        if getattr(self, "_sel_scheduled", False):
+            return
+        self._sel_scheduled = True
+        try:
+            self.canvas.after_idle(self._update_selection_now)
+        except Exception:
+            self._sel_scheduled = False
+
+    def _update_selection_now(self):
+        self._sel_scheduled = False
+
+        try:
+            if not self.canvas.winfo_exists():
+                return
+        except Exception:
+            return
+
+        try:
+            sel = self.app.sel
+        except Exception:
+            sel = set()
+
+        for iid in self.canvas.find_withtag("vtbg"):
+            path = None
+            for tag in self.canvas.gettags(iid):
+                if tag.startswith("vt::"):
+                    path = tag[4:]
+                    break
+
+            if not path:
+                continue
+
+            if path in sel:
+                self.canvas.itemconfigure(
+                    iid,
+                    fill=C["thumb_sel"],
+                    outline=C["sel_brd"],
+                    width=1,
+                )
+            else:
+                self.canvas.itemconfigure(
+                    iid,
+                    fill=C["thumb_bg"],
+                    outline="",
+                    width=1,
+                )
+
+    def scroll_to_path(self, path):
+        try:
+            idx = self.app._position_of(path)
+        except Exception:
+            idx = -1
+
+        if idx < 0:
+            return
+
+        self._update_scrollregion()
+
+        cols, thumb_w, thumb_h, cell_w, cell_h = self._metrics()
+        row = idx // cols
+
+        y0 = row * cell_h
+        y1 = y0 + cell_h
+
+        try:
+            top = self.canvas.canvasy(0)
+            canvas_h = max(1, self.canvas.winfo_height())
+        except Exception:
+            top, canvas_h = 0, 1
+
+        bottom = top + canvas_h
+
+        if y0 >= top and y1 <= bottom:
+            self.refresh()
+            return
+
+        count = len(self.app.thumbs)
+        rows = self._row_count(count, cols)
+
+        content_h = rows * cell_h + 1
+        total_h = max(content_h, canvas_h)
+
+        target = max(0, y0 - canvas_h // 3)
+        target = min(target, max(0, total_h - canvas_h))
+
+        try:
+            self.canvas.yview_moveto(target / max(1, total_h))
+            self.canvas.update_idletasks()
+        except Exception:
+            pass
+
+        self.refresh()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1961,19 +2073,28 @@ class App(tk.Tk):
 
     def _scroll_to_thumb(self, path):
         """Fait défiler le canvas central pour que la vignette path soit visible."""
+        if GRID_VIRTUAL:
+            if getattr(self, "_vg", None) is not None:
+                self._vg.scroll_to_path(path)
+            return
+
         if path not in self.thumb_wids:
             return
+
         cell = self.thumb_wids[path]["frame"]
+
         try:
             self._cv.update_idletasks()
             total_h = self._cv.bbox("all")[3]
             if not total_h:
                 return
+
             cell_top    = cell.winfo_rooty() - self._cv.winfo_rooty() + self._cv.canvasy(0)
             cell_bottom = cell_top + cell.winfo_height()
             canvas_h    = self._cv.winfo_height()
             scroll_top  = self._cv.canvasy(0)
             scroll_bot  = scroll_top + canvas_h
+
             if cell_top < scroll_top:
                 self._cv.yview_moveto(cell_top / total_h)
             elif cell_bottom > scroll_bot:
@@ -2724,6 +2845,9 @@ class App(tk.Tk):
         self._cv.configure(scrollregion=self._cv.bbox("all"))
 
     def _clear_grid(self):
+        if hasattr(self, "_preview_cache"):
+            self._preview_cache.clear()
+
         if GRID_VIRTUAL:
             if getattr(self, "_vg", None) is not None:
                 self._vg.canvas.delete("vt")
@@ -2881,7 +3005,7 @@ class App(tk.Tk):
     def _set_sel(self,path,on):
         if GRID_VIRTUAL:
             if getattr(self, "_vg", None) is not None:
-                self._vg.refresh()
+                self._vg.update_selection()
             return
 
         if path not in self.thumb_wids: return
@@ -3272,23 +3396,51 @@ class App(tk.Tk):
 
     # ── Aperçu ────────────────────────────────────────────────────────────────
     def _show_preview(self,path):
-        if path is None: return
-        entry=self.thumb_by_path.get(path)
-        if entry is None: return
-        sz=self.v_psize.get()
-        try:
-            full = Image.open(entry["path"])
-            ow, oh = full.size
-            full.draft("RGB", (sz, sz))
-            p = full.copy()
-        except Exception:
-            p = entry["img"].copy() if entry.get("img") is not None else None
-            ow, oh = (p.size if p is not None else (0, 0))
-        if p is None:
+        if path is None:
             return
-        p.thumbnail((sz,sz),Image.LANCZOS)
-        imgtk=ImageTk.PhotoImage(p); self._prev_ref=imgtk; self._prev_lbl.config(image=imgtk)
-        pos=self._position_of(path)+1
+
+        entry = self.thumb_by_path.get(path)
+        if entry is None:
+            return
+
+        sz = self.v_psize.get()
+
+        if not hasattr(self, "_preview_cache"):
+            self._preview_cache = {}
+
+        key = (path, sz)
+        cached = self._preview_cache.get(key)
+
+        if cached is not None:
+            imgtk, ow, oh = cached
+        else:
+            try:
+                full = Image.open(entry["path"])
+                ow, oh = full.size
+                full.draft("RGB", (sz, sz))
+                p = full.copy()
+            except Exception:
+                p = entry["img"].copy() if entry.get("img") is not None else None
+                ow, oh = (p.size if p is not None else (0, 0))
+
+            if p is None:
+                return
+
+            p.thumbnail((sz, sz), Image.LANCZOS)
+            imgtk = ImageTk.PhotoImage(p)
+
+            self._preview_cache[key] = (imgtk, ow, oh)
+
+            if len(self._preview_cache) > 16:
+                try:
+                    self._preview_cache.pop(next(iter(self._preview_cache)))
+                except Exception:
+                    pass
+
+        self._prev_ref = imgtk
+        self._prev_lbl.config(image=imgtk)
+
+        pos = self._position_of(path) + 1
         self._prev_info.config(
             text=f"{os.path.basename(entry['path'])}\n\n"
                  f"⏱  {hms(entry['tc'])}\n📐  {ow}×{oh} px\n#{pos} / {len(self.thumbs)}")
