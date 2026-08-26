@@ -15,6 +15,12 @@ from tkinter import ttk, filedialog, messagebox
 import cv2
 import numpy as np
 from PIL import Image, ImageTk
+try:
+    from send2trash import send2trash          # v4.4 : suppression vers la corbeille
+    _TRASH_OK = True
+except ImportError:
+    send2trash = None
+    _TRASH_OK = False
 import io
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -178,6 +184,28 @@ def get_display_size(path, raw_w, raw_h):
     except Exception:
         pass
     return raw_w, raw_h
+
+def trash_files(paths):
+    """v4.4 : envoie une liste de fichiers à la corbeille en UNE opération
+    (= une seule restauration groupée possible depuis la corbeille).
+    Retourne la liste des erreurs [(path, exception), ...].
+    Fallback : os.remove si send2trash est absent ou si l'envoi échoue."""
+    existing = [p for p in paths if os.path.exists(p)]
+    if not existing:
+        return []
+    if _TRASH_OK:
+        try:
+            send2trash(existing)
+            return []
+        except Exception:
+            pass   # fallback ci-dessous
+    errors = []
+    for p in existing:
+        try:
+            os.remove(p)
+        except Exception as ex:
+            errors.append((p, ex))
+    return errors
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Extraction ffmpeg — commande corrigée v2.9
@@ -2467,34 +2495,35 @@ class App(tk.Tk):
         n = len(self.sel)
         if self.v_confirm_del.get():
             if not messagebox.askyesno("Supprimer",
-                    f"Supprimer {n} image(s) sélectionnée(s) ?\nLes fichiers JPG seront supprimés."):
+                    f"Supprimer {n} image(s) sélectionnée(s) ?\nLes fichiers seront déplacés vers la corbeille."):
                 return
         # v4 : identité = chemin → aucune renumérotation nécessaire
         deleted_paths = list(self.sel)
         deleted_set   = set(deleted_paths)
         first_pos     = min(self._position_of(p) for p in deleted_paths)
-        # 1) Supprimer les fichiers + détruire les widgets
+        # 1) v4.4 : envoyer les fichiers à la corbeille (envoi groupé)
+        errors = trash_files(deleted_paths)
+        # 2) Détruire les widgets + nettoyer les structures
         for path in deleted_paths:
-            try:
-                if os.path.exists(path):
-                    os.remove(path)
-            except Exception as ex:
-                messagebox.showwarning("Erreur", f"Impossible de supprimer :\n{path}\n{ex}")
             w = self.thumb_wids.pop(path, None)
             if w:
                 w["frame"].destroy()
             self.marked.discard(path)
             self.thumb_refs.pop(path, None)
             self.thumb_by_path.pop(path, None)
-        # 2) Reconstruire la liste ordonnée sans les supprimés
+        # 3) Reconstruire la liste ordonnée sans les supprimés
         self.thumbs = [e for e in self.thumbs if e["path"] not in deleted_set]
         self.sel.clear()
-        # 3) Plus rien → réinitialiser
+        if errors:
+            messagebox.showwarning("Erreurs",
+                "Fichier(s) non supprimé(s), encore présent(s) dans le dossier :\n" +
+                "\n".join(f"{os.path.basename(p)} : {ex}" for p, ex in errors))
+        # 4) Plus rien → réinitialiser
         if not self.thumbs:
             self._clear_all_thumb_state()
             self._auto_save_config()
             return
-        # 4) Repositionner + sélectionner le voisin le plus proche
+        # 5) Repositionner + sélectionner le voisin le plus proche
         self._reflow_grid()
         new_pos  = min(first_pos, len(self.thumbs) - 1)
         new_path = self.thumbs[new_pos]["path"]
@@ -2514,20 +2543,22 @@ class App(tk.Tk):
         if not os.path.isdir(outdir): messagebox.showwarning("Attention","Le dossier n'existe pas."); return
         jpgs=[f for f in os.listdir(outdir) if f.lower().endswith((".jpg",".jpeg"))]
         if not jpgs: messagebox.showinfo("Info","Le dossier est déjà vide."); return
-        if self.v_confirm_del.get():
-            if not messagebox.askyesno("Vider",f"Supprimer {len(jpgs)} fichier(s) JPG ?\nIrréversible."): return
-        errors=[]
-        for f in jpgs:
-            try: os.remove(os.path.join(outdir,f))
-            except Exception as ex: errors.append(f"{f}:{ex}")
-        if errors: messagebox.showwarning("Erreurs","\n".join(errors))
+        # v4.4 : confirmation TOUJOURS demandée pour "Vider" (même si la case est décochée)
+        if not messagebox.askyesno("Vider le dossier",
+                f"Déplacer {len(jpgs)} fichier(s) JPG vers la corbeille ?"):
+            return
+        # v4.4 : corbeille au lieu de la suppression définitive
+        errors = trash_files([os.path.join(outdir, f) for f in jpgs])
+        if errors:
+            messagebox.showwarning("Erreurs",
+                "\n".join(f"{os.path.basename(p)} : {ex}" for p, ex in errors))
         self.thumbs.clear(); self.thumb_refs.clear(); self.thumb_by_path.clear(); self.thumb_wids.clear()
         self.sel.clear(); self.marked.clear(); self._last_click_path=None; self._upd_marked_badge(); self._clear_grid()
         self._prev_lbl.config(image=""); self._prev_ref=None
         self._prev_info.config(text="Cliquez sur une\nvignette…")
         self._badge_total.config(text="0 image(s)"); self._badge_sel.config(text="")
         self._del_btn.set_state("disabled"); self._prog.set(0)
-        self._prog_lbl.config(text=f"✔  {len(jpgs)-len(errors)} fichier(s) supprimé(s)")
+        self._prog_lbl.config(text=f"✔  {len(jpgs)-len(errors)} fichier(s) déplacé(s) vers la corbeille")
 
     # ── Drag-select ───────────────────────────────────────────────────────────
     def _drag_start(self,event):
