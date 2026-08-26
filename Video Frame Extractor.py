@@ -10,6 +10,7 @@ Dépendances : pip install opencv-python Pillow numpy
 
 import os, json, threading, tkinter as tk, subprocess, shutil, tempfile, time
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field, asdict
 from tkinter import ttk, filedialog, messagebox
 import cv2
 import numpy as np
@@ -20,45 +21,79 @@ import io
 #  Config
 # ─────────────────────────────────────────────────────────────────────────────
 CONFIG_FILE = "VFE_Config.json"
-DEFAULT_CONFIG = {
-    "video_path":    "",
-    "output_dir":    "",
-    "work_dir":      "",
-    "generic_name":  "capture",
-    "mode":          "count",
-    "count_val":     20,
-    "interval_val":  30,
-    "thumb_size":    150,
-    "col_count":     4,
-    "preview_size":  280,
-    "window_size":   "auto",
-    "sash_left":     310,
-    "sash_right":    700,
-    "confirm_delete":  True,
-    "black_filter":    True,
-    "mark_key":        "s",
-    "marked_files":    [],
-    "hdr_tonemap":     "hable",
-    "last_video_dir": "",
-    "last_output_dir": "",
-    "last_work_dir": "",
-    "window_h": 1080,
-}
+@dataclass
+class AppConfig:
+    """v4.2 : schéma unique de la configuration — source de vérité des clés,
+    types et valeurs par défaut. Ajouter une option = ajouter un champ ici
+    + une ligne dans App._collect_config()."""
+    video_path:      str  = ""
+    output_dir:      str  = ""
+    work_dir:        str  = ""
+    generic_name:    str  = "capture"
+    mode:            str  = "count"
+    count_val:       int  = 20
+    interval_val:    int  = 30
+    thumb_size:      int  = 150
+    col_count:       int  = 4
+    preview_size:    int  = 280
+    window_size:     str  = "auto"
+    sash_left:       int  = 310
+    sash_right:      int  = 700
+    confirm_delete:  bool = True
+    black_filter:    bool = True
+    mark_key:        str  = "s"
+    marked_files:    list = field(default_factory=list)
+    hdr_tonemap:     str  = "hable"
+    last_video_dir:  str  = ""
+    last_output_dir: str  = ""
+    last_work_dir:   str  = ""
+    window_h:        int  = 1080
+
+DEFAULT_CONFIG = asdict(AppConfig())   # rétro-compatible (dict des défauts)
+
+def _cast_value(val, default):
+    """Convertit val vers le type de default ; retombe sur default si invalide."""
+    try:
+        if isinstance(default, bool):
+            if isinstance(val, bool): return val
+            if isinstance(val, str):  return val.strip().lower() in ("1","true","oui","yes","on")
+            return bool(val)
+        if isinstance(default, int):
+            return int(float(val))
+        if isinstance(default, list):
+            return list(val) if isinstance(val, (list, tuple)) else []
+        if isinstance(default, str):
+            return default if val is None else str(val)
+        return val
+    except (ValueError, TypeError):
+        return default
+
+def _coerce_config(raw):
+    """Fusionne raw avec les défauts du schéma et convertit chaque valeur.
+    v4.2 : une config corrompue ne peut plus faire planter le démarrage."""
+    if not isinstance(raw, dict):
+        raw = {}
+    out = {}
+    defaults = AppConfig()
+    for name, default in asdict(defaults).items():
+        out[name] = _cast_value(raw.get(name, default), default)
+    return out
 
 def load_config():
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                c = DEFAULT_CONFIG.copy()
-                c.update(json.load(f))
-                return c
+                return _coerce_config(json.load(f))
         except Exception:
             pass
-    return DEFAULT_CONFIG.copy()
+    return _coerce_config({})
 
 def save_config(cfg):
-    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, indent=2, ensure_ascii=False)
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Palette
@@ -2661,26 +2696,38 @@ class App(tk.Tk):
         self._badge_marked.config(text=f"✓ {n} marquée(s)" if n else "")
         self._upd_badges()   # active/désactive le bouton de déplacement selon sel + marked
 
-    def _auto_save_config(self):
-        s0,s1=self._get_sash_positions()
-        save_config({
-            "video_path":self.v_path.get(),
-            "output_dir":self.v_outdir.get(),                     
-            "work_dir":self.v_workdir.get(),
-            "generic_name":self.v_generic.get(),
-            "mode":self.v_mode.get(),
-            "count_val":self.v_count.get(),
-            "interval_val":self.v_intv.get(),"thumb_size":self.v_tsize.get(),
-            "col_count":self.v_cols.get(),"preview_size":self.v_psize.get(),
-            "window_size":self.v_winsize.get(),"sash_left":s0,"sash_right":s1,
-            "confirm_delete":self.v_confirm_del.get(),"black_filter":self.v_black_filter.get(),
-            "mark_key":self.v_mark_key.get(),"hdr_tonemap":self.v_hdr_tonemap.get(),
-            "last_video_dir": self._cfg.get("last_video_dir", ""),
-            "last_work_dir": self._cfg.get("last_work_dir", ""),
-            "marked_files": sorted(self.marked),
+    def _collect_config(self):
+        """v4.2 : point unique de collecte de la config (UI + état interne).
+        Remplace les deux dicts dupliqués des anciennes sauvegardes."""
+        s0, s1 = self._get_sash_positions()
+        raw = {
+            "video_path":     self.v_path.get(),
+            "output_dir":     self.v_outdir.get(),
+            "work_dir":       self.v_workdir.get(),
+            "generic_name":   self.v_generic.get(),
+            "mode":           self.v_mode.get(),
+            "count_val":      self.v_count.get(),
+            "interval_val":   self.v_intv.get(),
+            "thumb_size":     self.v_tsize.get(),
+            "col_count":      self.v_cols.get(),
+            "preview_size":   self.v_psize.get(),
+            "window_size":    self.v_winsize.get(),
+            "sash_left":      s0,
+            "sash_right":     s1,
+            "confirm_delete": self.v_confirm_del.get(),
+            "black_filter":   self.v_black_filter.get(),
+            "mark_key":       self.v_mark_key.get(),
+            "hdr_tonemap":    self.v_hdr_tonemap.get(),
+            "last_video_dir":  self._cfg.get("last_video_dir", ""),
             "last_output_dir": self._cfg.get("last_output_dir", ""),
-            "window_h": self.winfo_height(),
-        })
+            "last_work_dir":   self._cfg.get("last_work_dir", ""),
+            "marked_files":    sorted(self.marked),
+            "window_h":        self.winfo_height(),
+        }
+        return _coerce_config(raw)
+
+    def _auto_save_config(self):
+        save_config(self._collect_config())
 
     def _restore_marked(self):
         saved = set(self._cfg.get("marked_files", []))
@@ -2910,32 +2957,9 @@ class App(tk.Tk):
 
     # ── Sauvegarde config ─────────────────────────────────────────────────────
     def _save_config_action(self):
-        s0,s1=self._get_sash_positions()
-        save_config({
-            "video_path":self.v_path.get(),
-            "output_dir":self.v_outdir.get(),                     
-            "work_dir":self.v_workdir.get(),
-            "generic_name":self.v_generic.get(),
-            "mode":self.v_mode.get(),
-            "count_val":self.v_count.get(),
-            "interval_val":self.v_intv.get(),
-            "thumb_size":self.v_tsize.get(),
-            "col_count":self.v_cols.get(),
-            "preview_size":self.v_psize.get(),
-            "window_size":self.v_winsize.get(),
-            "sash_left":s0,"sash_right":s1,
-            "confirm_delete":self.v_confirm_del.get(),
-            "black_filter":self.v_black_filter.get(),
-            "mark_key":self.v_mark_key.get(),
-            "hdr_tonemap":self.v_hdr_tonemap.get(),
-            "last_video_dir": self._cfg.get("last_video_dir", ""),
-            "last_work_dir": self._cfg.get("last_work_dir", ""),
-            "marked_files": sorted(self.marked),
-            "last_output_dir": self._cfg.get("last_output_dir", ""),
-            "window_h": self.winfo_height(),
-        })
+        save_config(self._collect_config())
         self._prog_lbl.config(text="✔  Configuration sauvegardée")
-        self.after(3000,lambda: self._prog_lbl.config(text=""))
+        self.after(3000, lambda: self._prog_lbl.config(text=""))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
