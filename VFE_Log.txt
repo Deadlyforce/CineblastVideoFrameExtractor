@@ -527,3 +527,8 @@ Output #0, image2, to 'C:\Users\norma\AppData\Local\Temp\vfe_59kg_29u.jpg':
 [out#0/image2 @ 00000251cf272f00] Output file is empty, nothing was encoded(check -ss / -t / -frames parameters if used)
 frame=    0 fps=0.0 q=0.0 Lsize=N/A time=N/A bitrate=N/A speed=N/A elapsed=0:00:00.42
 2026-08-26 18:37:44  INFO     Extraction terminée : 86 image(s), 3 noire(s) filtrée(s), 1 échec(s)
+2026-08-26 19:26:37  INFO     Démarrage — ffmpeg présent | corbeille (send2trash) ACTIVE
+2026-08-26 19:26:37  INFO     Vidéo chargée : Backrooms (2026).mp4 | 1h 50m 28s | 3836x2072 | 23.98 fps
+2026-08-26 19:26:37  INFO     Analyse couleur : HDR
+2026-08-26 19:27:22  INFO     Suppression : 46 image(s) → corbeille
+2026-08-26 19:27:26  INFO     Suppression : 15 image(s) → corbeille

@@ -1410,12 +1410,15 @@ class App(tk.Tk):
         # v4.7 (chantier 8) : branchement de la grille virtualisée.
         if GRID_VIRTUAL:
             self._vg = VirtualThumbGrid(self._cv, self)
+            self._vg_drag = None
             self._center_scrollbar.command = self._vg_yview
             self._cv.bind("<Configure>", lambda e: self._vg.refresh(), add="+")
             self._cv.bind("<MouseWheel>", lambda e: self._vg.refresh(), add="+")
             self._cv.bind("<Button-4>", lambda e: self._vg.refresh(), add="+")
             self._cv.bind("<Button-5>", lambda e: self._vg.refresh(), add="+")
-            self._cv.bind("<Button-1>", self._vg_on_click, add="+")
+            self._cv.bind("<ButtonPress-1>", self._vg_on_press, add="+")
+            self._cv.bind("<B1-Motion>", self._vg_on_drag, add="+")
+            self._cv.bind("<ButtonRelease-1>", self._vg_on_release, add="+")
             try:
                 self._cv.itemconfigure(self._gwin, state="hidden")
             except Exception:
@@ -1934,6 +1937,147 @@ class App(tk.Tk):
                     self._clear_selection()
                     self._upd_badges()
                     self._prev_info.config(text="Cliquez sur une\nvignette…")
+
+        return "break"
+
+    def _vg_on_press(self, event):
+        if getattr(self, "_vg", None) is None:
+            return
+
+        self.focus_set()
+
+        self._vg_drag = {
+            "active": False,
+            "x0": self._cv.canvasx(event.x),
+            "y0": self._cv.canvasy(event.y),
+            "ctrl": bool(event.state & 0x0004),
+            "shift": bool(event.state & 0x0001),
+            "before": set(self.sel),
+        }
+
+        return "break"
+
+    def _vg_on_drag(self, event):
+        st = getattr(self, "_vg_drag", None)
+        if not st:
+            return
+
+        x = self._cv.canvasx(event.x)
+        y = self._cv.canvasy(event.y)
+
+        if not st["active"]:
+            if abs(x - st["x0"]) < 5 and abs(y - st["y0"]) < 5:
+                return
+
+            st["active"] = True
+
+            if not st["ctrl"]:
+                self._clear_selection()
+                self._upd_badges()
+
+        st["x1"] = x
+        st["y1"] = y
+
+        self._vg_draw_rubber()
+        self._vg_select_rubber()
+
+        return "break"
+
+    def _vg_draw_rubber(self):
+        st = getattr(self, "_vg_drag", None)
+        if not st or "x1" not in st:
+            return
+
+        x1, x2 = sorted((st["x0"], st["x1"]))
+        y1, y2 = sorted((st["y0"], st["y1"]))
+
+        self._cv.delete("rb")
+        self._cv.create_rectangle(
+            x1, y1, x2, y2,
+            outline="",
+            fill=C["accent_bg"],
+            stipple="gray25",
+            tags="rb",
+        )
+        self._cv.create_rectangle(
+            x1, y1, x2, y2,
+            outline=C["accent"],
+            fill="",
+            width=2,
+            dash=(6, 3),
+            tags="rb",
+        )
+        self._cv.tag_raise("rb")
+
+    def _vg_select_rubber(self):
+        st = getattr(self, "_vg_drag", None)
+        if not st or "x1" not in st:
+            return
+
+        x1, x2 = sorted((st["x0"], st["x1"]))
+        y1, y2 = sorted((st["y0"], st["y1"]))
+
+        new = set()
+
+        for iid in self._cv.find_withtag("vtbg"):
+            try:
+                bx1, by1, bx2, by2 = self._cv.coords(iid)
+            except Exception:
+                continue
+
+            if bx1 < x2 and bx2 > x1 and by1 < y2 and by2 > y1:
+                path = None
+                for tag in self._cv.gettags(iid):
+                    if tag.startswith("vt::"):
+                        path = tag[4:]
+                        break
+
+                if path and path in self.thumb_by_path:
+                    new.add(path)
+
+        if st["ctrl"]:
+            target = st["before"] | new
+        else:
+            target = new
+
+        target = {p for p in target if p in self.thumb_by_path}
+
+        self.sel = set(target)
+
+        if getattr(self, "_vg", None) is not None:
+            self._vg.update_selection()
+
+        self._upd_badges()
+
+    def _vg_on_release(self, event):
+        st = getattr(self, "_vg_drag", None)
+        if not st:
+            return
+
+        self._cv.delete("rb")
+
+        if not st["active"]:
+            self._vg_on_click(event)
+        else:
+            self._upd_badges()
+
+            if len(self.sel) == 1:
+                p = next(iter(self.sel))
+                self._last_click_path = p
+                self._show_preview(p)
+            elif len(self.sel) > 1:
+                self._last_click_path = None
+                self._prev_lbl.config(image="")
+                self._prev_ref = None
+                self._prev_info.config(
+                    text=f"Sélection multiple\n({len(self.sel)} images)\n\nAperçu désactivé.")
+            else:
+                self._last_click_path = None
+                self._prev_lbl.config(image="")
+                self._prev_ref = None
+                self._prev_info.config(text="Cliquez sur une\nvignette…")
+
+        self._vg_drag = None
 
         return "break"
 
