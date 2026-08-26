@@ -1355,6 +1355,8 @@ class App(tk.Tk):
         self._drag_active=False; self._drag_in_zone=False; self._drag_sel_before=set()
         self._hdr_info={}          # résultat detect_hdr() pour la vidéo courante
         self._zscale_ok=None       # cache du test zscale_available()
+        self._hdr_detect_done=threading.Event()   # v4.8 (point 9)
+        self._hdr_detect_done.set()               # prêt tant qu'aucune détection n'est en cours
 
         self.minsize(LEFT_MIN_W+400,560)
         setup_style(self)
@@ -2596,6 +2598,9 @@ class App(tk.Tk):
             text=f"  Durée       {hms(dur)}\n  Résolution  {raw_w}×{raw_h}{sar_note}\n"
                  f"  FPS         {fps:.2f}\n  Taille      {mb:.1f} Mo")
         self._update_derived()
+        # v4.8 (point 9) : réinitialise l'état HDR et signale une détection en cours
+        self._hdr_info={}
+        self._hdr_detect_done.clear()
         # Détection HDR en arrière-plan pour ne pas bloquer l'UI
         threading.Thread(target=self._detect_hdr_async, args=(path,), daemon=True).start()
         log.info("Vidéo chargée : %s | %s | %dx%d | %.2f fps",
@@ -2612,7 +2617,11 @@ class App(tk.Tk):
     def _detect_hdr_async(self, path):
         """Lance detect_hdr() en thread, puis met à jour l'UI."""
         hdr = detect_hdr(path)
+        # v4.8 (point 9) : publie le résultat puis signale qu'il est prêt.
+        # L'Event sert de barrière mémoire : un lecteur qui voit l'event "set"
+        # voit aussi _hdr_info peuplé.
         self._hdr_info = hdr
+        self._hdr_detect_done.set()
         log.info("Analyse couleur : %s", "HDR" if hdr.get("is_hdr") else "SDR")
         self.after(0, self._update_hdr_indicator, hdr)
 
@@ -2818,6 +2827,16 @@ class App(tk.Tk):
         sar_applied=info.get("sar_applied",False)
         do_filter=self.v_black_filter.get()
         base=os.path.splitext(os.path.basename(vpath))[0]
+        # v4.8 (point 9) : on est dans un thread → on peut attendre la fin de la
+        # détection HDR sans figer l'UI. Supprime la race "extraction lancée avant
+        # la fin de detect_hdr()" qui faisait partir une vidéo HDR en pipeline SDR.
+        t0=time.time()
+        while not self._hdr_detect_done.wait(timeout=0.1):
+            if self._cancel:
+                return
+            if time.time()-t0>20:
+                log.warning("Détection HDR non terminée sous 20 s — pipeline choisi sans garantie")
+                break
         hdr_info   = self._hdr_info
         is_hdr     = hdr_info.get("is_hdr", False)
         tonemap    = self.v_hdr_tonemap.get()
