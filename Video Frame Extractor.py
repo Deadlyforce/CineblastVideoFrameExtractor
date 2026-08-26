@@ -2769,8 +2769,7 @@ class App(tk.Tk):
         moves = []
         for src in paths:
             while True:
-                digits = 2 if num < 100 else 3
-                dst = os.path.join(workdir, f"{generic}_{num:0{digits}d}.jpg")
+                dst = os.path.join(workdir, f"{generic}_{num:04d}.jpg")   # v4.3 : 4 chiffres → tri alpha = ordre
                 if not os.path.exists(dst): break
                 num += 1
             moves.append((src, dst)); num += 1
