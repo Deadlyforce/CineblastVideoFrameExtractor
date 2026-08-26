@@ -535,3 +535,89 @@ frame=    0 fps=0.0 q=0.0 Lsize=N/A time=N/A bitrate=N/A speed=N/A elapsed=0:00:
 2026-08-26 20:14:54  INFO     Démarrage — ffmpeg présent | corbeille (send2trash) ACTIVE
 2026-08-26 20:14:55  INFO     Vidéo chargée : Backrooms (2026).mp4 | 1h 50m 28s | 3836x2072 | 23.98 fps
 2026-08-26 20:14:55  INFO     Analyse couleur : HDR
+2026-08-26 21:38:57  INFO     Démarrage — ffmpeg présent | corbeille (send2trash) ACTIVE
+2026-08-26 21:38:57  INFO     Vidéo chargée : Backrooms (2026).mp4 | 1h 50m 28s | 3836x2072 | 23.98 fps
+2026-08-26 21:38:57  INFO     Analyse couleur : HDR
+2026-08-26 21:39:02  INFO     Vider le dossier : 25 fichier(s) → corbeille
+2026-08-26 21:39:10  INFO     Extraction lancée : 150 frame(s) ciblée(s) — Backrooms (2026).mp4
+2026-08-26 21:40:06  WARNING  Échec frame 150 (1h 50m 28s) : ffmpeg version N-122390-gaf6a1dd0b2-20260108 Copyright (c) 2000-2026 the FFmpeg developers
+  built with gcc 15.2.0 (crosstool-NG 1.28.0.1_403899e)
+  configuration: --prefix=/ffbuild/prefix --pkg-config-flags=--static --pkg-config=pkg-config --cross-prefix=x86_64-w64-mingw32- --arch=x86_64 --target-os=mingw32 --enable-gpl --enable-version3 --disable-debug --disable-w32threads --enable-pthreads --enable-iconv --enable-zlib --enable-libxml2 --enable-libvmaf --enable-fontconfig --enable-libharfbuzz --enable-libfreetype --enable-libfribidi --enable-vulkan --enable-libshaderc --enable-libvorbis --disable-libxcb --disable-xlib --disable-libpulse --enable-opencl --enable-gmp --enable-lzma --enable-liblcevc-dec --enable-amf --enable-libaom --enable-libaribb24 --enable-avisynth --enable-chromaprint --enable-libdav1d --enable-libdavs2 --enable-libdvdread --enable-libdvdnav --disable-libfdk-aac --enable-ffnvcodec --enable-cuda-llvm --enable-frei0r --enable-libgme --enable-libkvazaar --enable-libaribcaption --enable-libass --enable-libbluray --enable-libjxl --enable-libmp3lame --enable-libopus --enable-libplacebo --enable-librist --enable-libssh --enable-libtheora --enable-libvpx --enable-libwebp --enable-libzmq --enable-lv2 --enable-libvpl --enable-openal --enable-liboapv --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenh264 --enable-libopenjpeg --enable-libopenmpt --enable-librav1e --enable-librubberband --enable-schannel --enable-sdl2 --enable-libsnappy --enable-libsoxr --enable-libsrt --enable-libsvtav1 --enable-libtwolame --enable-libuavs3d --disable-libdrm --enable-vaapi --enable-libvidstab --enable-libvvenc --enable-whisper --enable-libx264 --enable-libx265 --enable-libxavs2 --enable-libxvid --enable-libzimg --enable-libzvbi --extra-cflags=-DLIBTWOLAME_STATIC --extra-cxxflags= --extra-libs=-lgomp --extra-ldflags=-pthread --extra-ldexeflags= --cc=x86_64-w64-mingw32-gcc --cxx=x86_64-w64-mingw32-g++ --ar=x86_64-w64-mingw32-gcc-ar --ranlib=x86_64-w64-mingw32-gcc-ranlib --nm=x86_64-w64-mingw32-gcc-nm --extra-version=20260108
+  libavutil      60. 23.100 / 60. 23.100
+  libavcodec     62. 23.102 / 62. 23.102
+  libavformat    62.  8.102 / 62.  8.102
+  libavdevice    62.  2.100 / 62.  2.100
+  libavfilter    11. 10.101 / 11. 10.101
+  libswscale      9.  3.100 /  9.  3.100
+  libswresample   6.  2.100 /  6.  2.100
+[mov,mp4,m4a,3gp,3g2,mj2 @ 000001f398960240] UDTA parsing failed retrying raw
+    Last message repeated 4 times
+[mov,mp4,m4a,3gp,3g2,mj2 @ 000001f398960240] stream 0, timescale not set
+Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'C:/Users/norma/Desktop/Backrooms (2026).mp4':
+  Metadata:
+    major_brand     : isom
+    minor_version   : 512
+    compatible_brands: isomdby1iso2mp41
+    title           : Backrooms.2026.2160p.iT.WEB-DL.DV.HDR10+[Ben The Men]
+    encoder         : Lavf60.3.100
+  Duration: 01:50:28.77, start: 0.000000, bitrate: 26236 kb/s
+  Stream #0:0[0x1](eng): Video: hevc (Main 10) (hev1 / 0x31766568), yuv420p10le(tv, bt2020nc/bt2020/smpte2084), 3836x2072 [SAR 1:1 DAR 137:74], 24490 kb/s, 23.98 fps, 23.98 tbr, 24k tbn (default)
+    Metadata:
+      creation_time   : 2026-07-14T01:23:33.000000Z
+      handler_name    : VideoHandler
+      name            : BEN.THE.MEN
+    Side data:
+      DOVI configuration record: version: 1.0, profile: 8, level: 6, rpu flag: 1, el flag: 0, bl flag: 1, compatibility id: 1, compression: 0
+  Stream #0:1[0x3](eng): Audio: eac3 (Dolby Digital Plus + Dolby Atmos) (ec-3 / 0x332D6365), 48000 Hz, 5.1(side), fltp, 768 kb/s (default)
+    Metadata:
+      handler_name    : SoundHandler
+      name            : BTM DDP5.1 Atmos
+    Side data:
+      Audio Service Type: main
+  Stream #0:2[0x4](eng): Audio: eac3 (ec-3 / 0x332D6365), 48000 Hz, 5.1(side), fltp, 960 kb/s (default)
+    Metadata:
+      handler_name    : SoundHandler
+      name            : BTM DDP5.1
+    Side data:
+      Audio Service Type: main
+  Stream #0:3[0x5](eng): Subtitle: mov_text (tx3g / 0x67337874), 0 kb/s (default)
+    Metadata:
+      handler_name    : SubtitleHandler
+      name            : BTM
+  Stream #0:4[0x6](eng): Subtitle: mov_text (tx3g / 0x67337874), 0 kb/s (hearing impaired) (captions)
+    Metadata:
+      handler_name    : SubtitleHandler
+      name            : BTM SDH
+  Stream #0:5[0x7](spa): Subtitle: mov_text (tx3g / 0x67337874), 0 kb/s
+    Metadata:
+      handler_name    : SubtitleHandler
+      name            : BTM LA
+  Stream #0:6[0x0]: Video: mjpeg (Baseline), yuvj444p(pc, bt470bg/unknown/unknown), 600x900 [SAR 300:300 DAR 2:3], 90k tbr, 90k tbn (attached pic)
+Stream mapping:
+  Stream #0:0 -> #0:0 (hevc (native) -> mjpeg (native))
+Press [q] to stop, [?] for help
+[vf#0:0 @ 000001f39adc38c0] No filtered frames for output stream, trying to initialize anyway.
+Output #0, image2, to 'C:\Users\norma\AppData\Local\Temp\vfe_q34j19hz.jpg':
+  Metadata:
+    major_brand     : isom
+    minor_version   : 512
+    compatible_brands: isomdby1iso2mp41
+    title           : Backrooms.2026.2160p.iT.WEB-DL.DV.HDR10+[Ben The Men]
+    encoder         : Lavf62.8.102
+  Stream #0:0(eng): Video: mjpeg, yuvj420p(pc, progressive), 3836x2072 [SAR 1:1 DAR 137:74], q=2-31, 200 kb/s, 23.98 fps, 24k tbn (default)
+    Metadata:
+      encoder         : Lavc62.23.102 mjpeg
+      creation_time   : 2026-07-14T01:23:33.000000Z
+      handler_name    : VideoHandler
+      name            : BEN.THE.MEN
+    Side data:
+      Mastering display metadata: has_primaries:1 has_luminance:1 r(0.6800,0.3200) g(0.2650,0.6900) b(0.1500 0.0600) wp(0.3127, 0.3290) min_luminance=0.005000, max_luminance=1000.000000
+      Content light level metadata: MaxCLL=329, MaxFALL=142
+      CPB properties: bitrate max/min/avg: 0/0/200000 buffer size: 0 vbv_delay: N/A
+[out#0/image2 @ 000001f398a03880] video:0KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+[out#0/image2 @ 000001f398a03880] Output file is empty, nothing was encoded(check -ss / -t / -frames parameters if used)
+frame=    0 fps=0.0 q=0.0 Lsize=N/A time=N/A bitrate=N/A speed=N/A elapsed=0:00:00.42
+2026-08-26 21:40:06  INFO     Extraction terminée : 144 image(s), 5 noire(s) filtrée(s), 1 échec(s)
+2026-08-26 22:38:56  INFO     Démarrage — ffmpeg présent | corbeille (send2trash) ACTIVE
+2026-08-26 22:38:56  INFO     Vidéo chargée : Backrooms (2026).mp4 | 1h 50m 28s | 3836x2072 | 23.98 fps
+2026-08-26 22:38:56  INFO     Analyse couleur : HDR

@@ -1056,6 +1056,8 @@ class VirtualThumbGrid:
         except Exception:
             sel = set()
 
+        hover = getattr(self, "_hover_path", None)
+
         for idx in range(first_idx, last_idx + 1):
             try:
                 entry = self.app.thumbs[idx]
@@ -1078,20 +1080,25 @@ class VirtualThumbGrid:
             ry1 = y0 + cell_h - 3
 
             if path in sel:
-                self.canvas.create_rectangle(
-                    rx0, ry0, rx1, ry1,
-                    fill=C["thumb_sel"],
-                    outline=C["sel_brd"],
-                    width=1,
-                    tags=("vt", f"vt::{path}", "vtbg"),
-                )
+                fill = C["thumb_sel"]
+                outline = C["sel_brd"]
+                width = 1
+            elif path == hover:
+                fill = C["thumb_hov"]
+                outline = ""
+                width = 1
             else:
-                self.canvas.create_rectangle(
-                    rx0, ry0, rx1, ry1,
-                    fill=C["thumb_bg"],
-                    outline="",
-                    tags=("vt", f"vt::{path}", "vtbg"),
-                )
+                fill = C["thumb_bg"]
+                outline = ""
+                width = 1
+
+            self.canvas.create_rectangle(
+                rx0, ry0, rx1, ry1,
+                fill=fill,
+                outline=outline,
+                width=width,
+                tags=("vt", f"vt::{path}", "vtbg", f"vtbg::{path}"),
+            )
 
             imgtk = self._photo_for(entry, thumb_w, thumb_h)
             if imgtk is not None:
@@ -1189,6 +1196,8 @@ class VirtualThumbGrid:
         except Exception:
             sel = set()
 
+        hover = getattr(self, "_hover_path", None)
+
         for iid in self.canvas.find_withtag("vtbg"):
             path = None
             for tag in self.canvas.gettags(iid):
@@ -1206,6 +1215,13 @@ class VirtualThumbGrid:
                     outline=C["sel_brd"],
                     width=1,
                 )
+            elif path == hover:
+                self.canvas.itemconfigure(
+                    iid,
+                    fill=C["thumb_hov"],
+                    outline="",
+                    width=1,
+                )
             else:
                 self.canvas.itemconfigure(
                     iid,
@@ -1213,6 +1229,42 @@ class VirtualThumbGrid:
                     outline="",
                     width=1,
                 )
+
+    def set_hover(self, path):
+        old = getattr(self, "_hover_path", None)
+        if old == path:
+            return
+
+        self._hover_path = path
+
+        try:
+            sel = self.app.sel
+        except Exception:
+            sel = set()
+
+        if old:
+            if old in sel:
+                self.canvas.itemconfigure(
+                    f"vtbg::{old}",
+                    fill=C["thumb_sel"],
+                    outline=C["sel_brd"],
+                    width=1,
+                )
+            else:
+                self.canvas.itemconfigure(
+                    f"vtbg::{old}",
+                    fill=C["thumb_bg"],
+                    outline="",
+                    width=1,
+                )
+
+        if path and path not in sel:
+            self.canvas.itemconfigure(
+                f"vtbg::{path}",
+                fill=C["thumb_hov"],
+                outline="",
+                width=1,
+            )
 
     def scroll_to_path(self, path):
         try:
@@ -1419,6 +1471,7 @@ class App(tk.Tk):
             self._cv.bind("<ButtonPress-1>", self._vg_on_press, add="+")
             self._cv.bind("<B1-Motion>", self._vg_on_drag, add="+")
             self._cv.bind("<ButtonRelease-1>", self._vg_on_release, add="+")
+            self._cv.bind("<Motion>", self._vg_on_motion, add="+")
             try:
                 self._cv.itemconfigure(self._gwin, state="hidden")
             except Exception:
@@ -2175,6 +2228,34 @@ class App(tk.Tk):
         self._vg_select_rubber()
 
         self._vg_schedule_autoscroll()
+
+    def _vg_on_motion(self, event):
+        if getattr(self, "_vg", None) is None:
+            return
+
+        st = getattr(self, "_vg_drag", None)
+        if st and st.get("active"):
+            return
+
+        x = self._cv.canvasx(event.x)
+        y = self._cv.canvasy(event.y)
+
+        ids = self._cv.find_overlapping(x, y, x, y)
+        path = None
+
+        for iid in reversed(ids):
+            for tag in self._cv.gettags(iid):
+                if tag.startswith("vt::"):
+                    path = tag[4:]
+                    break
+            if path:
+                break
+
+        if path and path not in self.thumb_by_path:
+            path = None
+
+        self._vg.set_hover(path)
+        self._cv.config(cursor="hand2" if path else "")
 
     def _on_info_canvas_configure(self, event):
         """Le canvas change de taille → on ajuste la largeur du contenu et on redessine le fond."""
