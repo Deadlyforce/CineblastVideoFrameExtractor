@@ -908,31 +908,24 @@ def is_black_frame(arr_rgb, threshold=5):
 #  Grille virtualisée — composant isolé (v4.7 / E65)
 # ─────────────────────────────────────────────────────────────────────────────
 class VirtualThumbGrid:
-    """v4.7 (chantier 8, E65) : composant isolé de grille virtualisée.
-
-    Ce composant prépare le rendu canvas fenêtré : il ne dessine que la zone
-    visible et recycle un cache de PhotoImage. Il n'est pas encore branché
-    dans l'interface à cette étape.
-    """
+    """v4.7 (chantier 8) : renderer virtualisé.
+    Dessine uniquement la fenêtre visible et gère un cache PhotoImage borné."""
 
     def __init__(self, canvas, app):
         self.canvas = canvas
         self.app = app
 
-        # Cache PhotoImage : path -> (thumb_width, PhotoImage)
+        # Cache PhotoImage : path -> ((thumb_w, thumb_h), PhotoImage)
         self._photo_cache = {}
 
-        # Anti-mitrafouillage : un seul redraw programmé à la fois
+        # Anti-mitraillage : un seul redraw programmé à la fois
         self._scheduled = False
 
-        # Métriques de layout provisoires, proches de la grille actuelle
+        # Métriques de layout
         self._pad_x = 9
-        self._pad_y = 10
-        self._text_h = 20
+        self._pad_y = 8
+        self._text_h = 18
 
-    # ------------------------------------------------------------------
-    # API publique prévue pour la suite du chantier
-    # ------------------------------------------------------------------
     def reload(self):
         self.refresh()
 
@@ -945,9 +938,23 @@ class VirtualThumbGrid:
         except Exception:
             self._scheduled = False
 
-    # ------------------------------------------------------------------
-    # Layout
-    # ------------------------------------------------------------------
+    def _thumb_height(self, thumb_w):
+        info = getattr(self.app, "video_info", {}) or {}
+        w = info.get("disp_w") or info.get("width") or 0
+        h = info.get("disp_h") or info.get("height") or 0
+
+        try:
+            w = int(w)
+            h = int(h)
+        except Exception:
+            w = h = 0
+
+        if w > 0 and h > 0:
+            return max(24, int(thumb_w * h / w))
+
+        # Fallback raisonnable si la vidéo n'est pas chargée
+        return max(24, int(thumb_w * 9 / 16))
+
     def _metrics(self):
         try:
             cols = max(1, int(self.app.v_cols.get()))
@@ -959,9 +966,12 @@ class VirtualThumbGrid:
         except Exception:
             thumb_w = 150
 
+        thumb_h = self._thumb_height(thumb_w)
+
         cell_w = thumb_w + 2 * self._pad_x
-        cell_h = thumb_w + self._text_h + 2 * self._pad_y
-        return cols, thumb_w, cell_w, cell_h
+        cell_h = thumb_h + self._text_h + 2 * self._pad_y
+
+        return cols, thumb_w, thumb_h, cell_w, cell_h
 
     def _row_count(self, count, cols):
         if count <= 0:
@@ -974,7 +984,7 @@ class VirtualThumbGrid:
         except Exception:
             count = 0
 
-        cols, thumb_w, cell_w, cell_h = self._metrics()
+        cols, thumb_w, thumb_h, cell_w, cell_h = self._metrics()
         rows = self._row_count(count, cols)
 
         width = max(self.canvas.winfo_width(), cols * cell_w + 1)
@@ -982,9 +992,6 @@ class VirtualThumbGrid:
 
         self.canvas.configure(scrollregion=(0, 0, width, height))
 
-    # ------------------------------------------------------------------
-    # Rendu fenêtré
-    # ------------------------------------------------------------------
     def _redraw(self):
         self._scheduled = False
 
@@ -1006,7 +1013,7 @@ class VirtualThumbGrid:
             self._photo_cache.clear()
             return
 
-        cols, thumb_w, cell_w, cell_h = self._metrics()
+        cols, thumb_w, thumb_h, cell_w, cell_h = self._metrics()
 
         try:
             top = self.canvas.canvasy(0)
@@ -1026,6 +1033,11 @@ class VirtualThumbGrid:
 
         visible = []
 
+        try:
+            sel = self.app.sel
+        except Exception:
+            sel = set()
+
         for idx in range(first_idx, last_idx + 1):
             try:
                 entry = self.app.thumbs[idx]
@@ -1039,22 +1051,43 @@ class VirtualThumbGrid:
             visible.append(path)
 
             row, col = divmod(idx, cols)
-            x_center = col * cell_w + cell_w // 2
-            y_img_center = row * cell_h + self._pad_y + thumb_w // 2
+            x0 = col * cell_w
+            y0 = row * cell_h
 
-            imgtk = self._photo_for(entry, thumb_w)
+            rx0 = x0 + 3
+            ry0 = y0 + 3
+            rx1 = x0 + cell_w - 3
+            ry1 = y0 + cell_h - 3
+
+            if path in sel:
+                self.canvas.create_rectangle(
+                    rx0, ry0, rx1, ry1,
+                    fill=C["thumb_sel"],
+                    outline=C["sel_brd"],
+                    width=1,
+                    tags=("vt", f"vt::{path}"),
+                )
+            else:
+                self.canvas.create_rectangle(
+                    rx0, ry0, rx1, ry1,
+                    fill=C["thumb_bg"],
+                    outline="",
+                    tags=("vt", f"vt::{path}"),
+                )
+
+            imgtk = self._photo_for(entry, thumb_w, thumb_h)
             if imgtk is not None:
                 self.canvas.create_image(
-                    x_center,
-                    y_img_center,
+                    x0 + cell_w // 2,
+                    y0 + self._pad_y + thumb_h // 2,
                     image=imgtk,
                     anchor="center",
                     tags=("vt", f"vt::{path}"),
                 )
 
             self.canvas.create_text(
-                x_center,
-                row * cell_h + self._pad_y + thumb_w + 5,
+                x0 + cell_w // 2,
+                y0 + self._pad_y + thumb_h + 4,
                 text=hms(entry.get("tc", 0)),
                 font=F_SMALL,
                 fill=C["t3"],
@@ -1064,33 +1097,50 @@ class VirtualThumbGrid:
 
         self._prune_cache(set(visible))
 
-    # ------------------------------------------------------------------
-    # Cache PhotoImage fenêtré
-    # ------------------------------------------------------------------
-    def _photo_for(self, entry, thumb_w):
+    def _get_check_icon(self):
+        if getattr(self, "_check_icon", None) is None:
+            try:
+                self._check_icon = self.app._make_check_icon(size=22)
+            except Exception:
+                self._check_icon = None
+        return self._check_icon
+
+    def _photo_for(self, entry, thumb_w, thumb_h):
         path = entry.get("path", "")
+        marked = path in getattr(self.app, "marked", set())
+        key = (thumb_w, thumb_h, marked)
 
         cached = self._photo_cache.get(path)
-        if cached is not None and cached[0] == thumb_w:
+        if cached is not None and cached[0] == key:
             return cached[1]
 
         img = entry.get("img")
         if img is None:
             try:
                 im = Image.open(path)
-                im.draft("RGB", (thumb_w, thumb_w))
+                im.draft("RGB", (thumb_w, thumb_h))
                 img = im.copy()
             except Exception:
                 return None
 
         try:
             th = img.copy()
-            th.thumbnail((thumb_w, thumb_w), Image.LANCZOS)
+            th.thumbnail((thumb_w, thumb_h), Image.LANCZOS)
+
+            if marked:
+                icon = self._get_check_icon()
+                if icon is not None and th.width >= icon.width + 4 and th.height >= icon.height + 4:
+                    th_rgba = th.convert("RGBA")
+                    x = th_rgba.width - icon.width - 2
+                    y = 2
+                    th_rgba.paste(icon, (x, y), icon)
+                    th = th_rgba.convert("RGB")
+
             imgtk = ImageTk.PhotoImage(th)
         except Exception:
             return None
 
-        self._photo_cache[path] = (thumb_w, imgtk)
+        self._photo_cache[path] = (key, imgtk)
         return imgtk
 
     def _prune_cache(self, visible_paths):
@@ -1210,9 +1260,13 @@ class App(tk.Tk):
 
         sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
         win_w = min(sash_left + center_need + right_need + 14, sw - 40)
+
         win_h = int(self._cfg.get("window_h", 1080))
-        cx = (sw - win_w) // 2
-        cy = (sh - win_h) // 2
+        win_h = max(560, win_h)
+        win_h = min(win_h, max(560, sh - 40))
+
+        cx = max(0, (sw - win_w) // 2)
+        cy = max(0, (sh - win_h) // 2)
 
         self.geometry(f"{win_w}x{win_h}+{cx}+{cy}")
 
@@ -1231,13 +1285,30 @@ class App(tk.Tk):
         self._pane=tk.PanedWindow(self,orient="horizontal",bg=C["bg"],
                                   sashwidth=5,sashrelief="flat",opaqueresize=True)
         self._pane.pack(fill="both",expand=True)
+
         self._lf=tk.Frame(self._pane,bg=C["bg"])
         self._cf=tk.Frame(self._pane,bg=C["bg"])
         self._rf=tk.Frame(self._pane,bg=C["bg"])
         self._pane.add(self._lf,minsize=LEFT_MIN_W,sticky="nsew")
         self._pane.add(self._cf,minsize=300,sticky="nsew")
         self._pane.add(self._rf,minsize=180,sticky="nsew")
+
         self._build_left(); self._build_center(); self._build_right()
+
+        # v4.7 (chantier 8) : branchement de la grille virtualisée.
+        if GRID_VIRTUAL:
+            self._vg = VirtualThumbGrid(self._cv, self)
+            self._center_scrollbar.command = self._vg_yview
+            self._cv.bind("<Configure>", lambda e: self._vg.refresh(), add="+")
+            self._cv.bind("<MouseWheel>", lambda e: self._vg.refresh(), add="+")
+            self._cv.bind("<Button-4>", lambda e: self._vg.refresh(), add="+")
+            self._cv.bind("<Button-5>", lambda e: self._vg.refresh(), add="+")
+            self._cv.bind("<Button-1>", self._vg_on_click, add="+")
+            try:
+                self._cv.itemconfigure(self._gwin, state="hidden")
+            except Exception:
+                pass
+
         self._statusbar=tk.Label(self,text="",font=F_SMALL,fg=C["t3"],
                                  bg=C["panel"],anchor="w",padx=12,pady=4)
         self._statusbar.pack(side="bottom",fill="x")
@@ -1709,6 +1780,50 @@ class App(tk.Tk):
             widget.bind("<ButtonPress-1>",  self._drag_start)
             widget.bind("<B1-Motion>",      self._drag_motion)
             widget.bind("<ButtonRelease-1>",self._drag_end)
+
+    def _vg_yview(self, *args):
+        self._cv.yview(*args)
+        if getattr(self, "_vg", None) is not None:
+            self._vg.refresh()
+
+    def _vg_on_click(self, event):
+        if getattr(self, "_vg", None) is None:
+            return
+
+        self.focus_set()
+
+        x = self._cv.canvasx(event.x)
+        y = self._cv.canvasy(event.y)
+
+        ids = self._cv.find_overlapping(x, y, x, y)
+        path = None
+
+        for iid in reversed(ids):
+            for tag in self._cv.gettags(iid):
+                if tag.startswith("vt::"):
+                    path = tag[4:]
+                    break
+            if path:
+                break
+
+        SHIFT_MASK = 0x0001
+        CTRL_MASK  = 0x0004
+
+        if path and path in self.thumb_by_path:
+            if event.state & CTRL_MASK:
+                self._ctrl_click(path)
+            elif event.state & SHIFT_MASK:
+                self._shift_click(path)
+            else:
+                self._click(path)
+        else:
+            if not (event.state & CTRL_MASK) and not (event.state & SHIFT_MASK):
+                if self.sel:
+                    self._clear_selection()
+                    self._upd_badges()
+                    self._prev_info.config(text="Cliquez sur une\nvignette…")
+
+        return "break"
 
     def _on_info_canvas_configure(self, event):
         """Le canvas change de taille → on ajuste la largeur du contenu et on redessine le fond."""
@@ -2479,6 +2594,11 @@ class App(tk.Tk):
 
     # ── Grille vignettes ──────────────────────────────────────────────────────
     def _add_thumb(self, path, pos):
+        if GRID_VIRTUAL:
+            if getattr(self, "_vg", None) is not None:
+                self._vg.refresh()
+            return
+
         entry = self.thumb_by_path[path]
         sz = self.v_tsize.get()
         cols = self.v_cols.get()
@@ -2596,11 +2716,20 @@ class App(tk.Tk):
     def _adjust_center_width(self): self._fit_window(animate=False)
 
     def _on_grid_configure(self, e):
+        if GRID_VIRTUAL:
+            return
+
         if getattr(self, '_loading_thumbs', False):
             return
         self._cv.configure(scrollregion=self._cv.bbox("all"))
 
     def _clear_grid(self):
+        if GRID_VIRTUAL:
+            if getattr(self, "_vg", None) is not None:
+                self._vg.canvas.delete("vt")
+                self._vg.refresh()
+            return
+
         for w in self._gf.winfo_children(): w.destroy()
         self.thumb_refs.clear(); self.thumb_wids.clear()
 
@@ -2624,6 +2753,11 @@ class App(tk.Tk):
         self._copy_btn.set_state("disabled")
 
     def _rebuild_grid(self):
+        if GRID_VIRTUAL:
+            if getattr(self, "_vg", None) is not None:
+                self._vg.refresh()
+            return
+
         self._clear_grid()
         self._loading_thumbs = True
         for pos, entry in enumerate(self.thumbs):
@@ -2745,6 +2879,11 @@ class App(tk.Tk):
             self._prev_info.config(text=f"Sélection multiple\n({len(self.sel)} images)\n\nAperçu désactivé.")
 
     def _set_sel(self,path,on):
+        if GRID_VIRTUAL:
+            if getattr(self, "_vg", None) is not None:
+                self._vg.refresh()
+            return
+
         if path not in self.thumb_wids: return
         w=self.thumb_wids[path]
         bg=C["thumb_sel"] if on else C["thumb_bg"]; brd=C["sel_brd"] if on else C["thumb_bg"]
@@ -2840,6 +2979,10 @@ class App(tk.Tk):
 
     # ── Drag-select ───────────────────────────────────────────────────────────
     def _drag_start(self,event):
+        if GRID_VIRTUAL:
+            self._drag_in_zone=False
+            return
+
         self._drag_active=False; self._drag_in_zone=True; self._drag_sel_before=set(self.sel)
         rx=event.x_root-self._cv.winfo_rootx(); ry=event.y_root-self._cv.winfo_rooty()
         self._drag_origin_cv=(self._cv.canvasx(rx),self._cv.canvasy(ry))
@@ -2893,7 +3036,11 @@ class App(tk.Tk):
             self._prev_lbl.config(image=""); self._prev_ref=None
             self._prev_info.config(text=f"Sélection multiple\n({len(self.sel)} images)\n\nAperçu désactivé.")
 
-    def _drag_end(self,event): self._finish_drag(event)
+    def _drag_end(self,event):
+        if GRID_VIRTUAL:
+            return
+        self._finish_drag(event)
+
     def _drag_end_from_thumb(self,event):
         if self._drag_active: self._finish_drag(event)
         self._drag_in_zone=False
@@ -2954,16 +3101,25 @@ class App(tk.Tk):
 
     def _update_mark_overlay(self, path):
         """Recrée la vignette avec ou sans icône composite selon l'état marqué."""
+        if GRID_VIRTUAL:
+            if getattr(self, "_vg", None) is not None:
+                self._vg.refresh()
+            return
+
         if path not in self.thumb_wids:
             return
+
         w = self.thumb_wids[path]
         entry = self.thumb_by_path[path]
         sz = self.v_tsize.get()
+
         th = entry["img"].copy()
         th.thumbnail((sz, sz), Image.LANCZOS)
+
         if path in self.marked:
             if not hasattr(self, '_cached_check_pil'):
                 self._cached_check_pil = self._make_check_icon(size=22)
+
             ICON_SIZE = 22
             icon = self._cached_check_pil
             th_rgba = th.convert("RGBA")
@@ -2971,8 +3127,9 @@ class App(tk.Tk):
             y = 2
             th_rgba.paste(icon, (x, y), icon)
             th = th_rgba.convert("RGB")
+
         imgtk = ImageTk.PhotoImage(th)
-        self.thumb_refs[path] = imgtk              # v4 : remplace la ref par chemin
+        self.thumb_refs[path] = imgtk
         w["label"].config(image=imgtk)
         w["label"].image = imgtk
 
@@ -3040,12 +3197,15 @@ class App(tk.Tk):
 
     def _restore_marked(self):
         saved = set(self._cfg.get("marked_files", []))
-        if not saved: return
+        if not saved:
+            return
+
         for entry in self.thumbs:
             p = entry["path"]
             if p in saved:
                 self.marked.add(p)
                 self._update_mark_overlay(p)
+
         self._upd_marked_badge()
 
     # ── Déplacement vers dossier de travail ───────────────────────────────────
@@ -3164,6 +3324,11 @@ class App(tk.Tk):
 
     def _reflow_grid(self):
         """Repositionne les widgets existants dans la grille sans rien recréer."""
+        if GRID_VIRTUAL:
+            if getattr(self, "_vg", None) is not None:
+                self._vg.refresh()
+            return
+
         cols = self.v_cols.get()
         for pos, entry in enumerate(self.thumbs):
             w = self.thumb_wids.get(entry["path"])
@@ -3236,8 +3401,10 @@ class App(tk.Tk):
         SASH_W = 5
         sz = self.v_tsize.get()
         cols = self.v_cols.get()
+
         center_need = cols * (sz + 22) + 12 + 14 + 10
         right_need = self.v_psize.get() + 36
+
         self.update_idletasks()
 
         try:
@@ -3246,13 +3413,21 @@ class App(tk.Tk):
             s0 = LEFT_MIN_W
 
         sw = self.winfo_screenwidth()
+        sh = self.winfo_screenheight()
+
+        target_h = int(target_h)
+        target_h = max(560, target_h)
+        target_h = min(target_h, max(560, sh - 40))
+
         win_target = min(max(s0 + center_need + right_need + SASH_W * 2 + 4,
-                            LEFT_MIN_W + 300), sw - 40)
-        cy = self.winfo_y()
+                             LEFT_MIN_W + 300), sw - 40)
+
+        cy = max(0, self.winfo_y())
         cx = max(0, (sw - win_target) // 2)
 
         self.geometry(f"{win_target}x{target_h}+{cx}+{cy}")
         self.update_idletasks()
+
         try:
             self._pane.paneconfig(self._cf, minsize=center_need)
             self._pane.paneconfig(self._rf, minsize=right_need)
