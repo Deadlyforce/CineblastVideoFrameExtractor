@@ -1807,7 +1807,11 @@ class App(tk.Tk):
                        selectcolor=C["input"],activebackground=C["bg"],
                        activeforeground=C["t1"],font=F_SMALL,anchor="w",
                        cursor="hand2").pack(side="left")
-        
+        # v4.14 (UX7) : aperçu du plan de capture avant extraction
+        self._plan_lbl=tk.Label(inner,text="",font=F_SMALL,fg=C["t2"],
+                                bg=C["panel"],justify="left",anchor="w",
+                                padx=10,pady=6)
+        self._plan_lbl.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(4,2)); row+=1
         HSep(inner).grid(row=row,column=0,sticky="ew",padx=PAD,pady=6); row+=1
 
         # Taille fenêtre
@@ -2518,6 +2522,46 @@ class App(tk.Tk):
         else:
             if dur and iv>0: self._sl_intv.set_info(f"→ {int(dur/iv)+1} photo(s) au total")
             else: self._sl_intv.set_info("")
+        self._update_capture_plan()   # v4.14 (UX7)
+
+    def _update_capture_plan(self):
+        """v4.14 (UX7) : affiche un résumé du plan de capture courant."""
+        if not hasattr(self, "_plan_lbl"):
+            return
+
+        dur = self.video_info.get("duration", 0)
+        if not dur:
+            self._plan_lbl.config(text="Chargez une vidéo pour prévisualiser le plan.")
+            return
+
+        try:
+            targets = self._compute_targets()
+        except Exception:
+            self._plan_lbl.config(text="")
+            return
+
+        if not targets:
+            self._plan_lbl.config(text="Aucune frame à extraire.")
+            return
+
+        n = len(targets)
+        first = targets[0]
+        last = targets[-1]
+
+        if self.v_mode.get() == "count":
+            if n == 1:
+                txt = f"📋  Plan : 1 image au début de la vidéo."
+            else:
+                span = last - first
+                avg = span / (n - 1) if n > 1 else 0
+                txt = (f"📋  Plan : {n} images entre {hms(first)} et {hms(last)}\n"
+                       f"      → une toutes les {hms(avg)} environ")
+        else:
+            iv = self.v_intv.get()
+            txt = (f"📋  Plan : {n} image(s) toutes les {iv} s\n"
+                   f"      → de {hms(first)} à {hms(last)}")
+
+        self._plan_lbl.config(text=txt)
 
     # ── Fichiers ──────────────────────────────────────────────────────────────
     def _pick_video(self):
@@ -2581,7 +2625,8 @@ class App(tk.Tk):
         # Détection HDR en arrière-plan pour ne pas bloquer l'UI
         threading.Thread(target=self._detect_hdr_async, args=(path,), daemon=True).start()
         log.info("Vidéo chargée : %s | %s | %dx%d | %.2f fps",
-                 os.path.basename(path), hms(dur), raw_w, raw_h, fps)        
+                 os.path.basename(path), hms(dur), raw_w, raw_h, fps)
+        self._update_capture_plan()   # v4.14 (UX7) : rafraîchit le plan avec la nouvelle durée      
 
 
     # ── HDR ───────────────────────────────────────────────────────────────────
