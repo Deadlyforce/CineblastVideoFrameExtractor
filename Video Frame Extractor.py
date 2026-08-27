@@ -15,6 +15,16 @@ from tkinter.font import Font
 import cv2
 import numpy as np
 from PIL import Image, ImageTk
+# ── Modules extraits (refactor A1) ──────────────────────────────────────────
+from vfe_config import (CONFIG_FILE, AppConfig, DEFAULT_CONFIG,
+                        load_config, save_config, _coerce_config)
+from vfe_utils import (hms, tc_str, dir_parent_label,
+                       _parse_tc_from_filename, is_black_frame)
+from vfe_ffmpeg import (ffmpeg_available, get_display_size, detect_hdr,
+                        zscale_available, build_ffmpeg_cmd,
+                        build_ffmpeg_cmd_fallback, build_ffmpeg_cmd_hdr,
+                        build_ffmpeg_cmd_hdr_fallback)
+from vfe_plan import compute_targets
 try:
     from send2trash import send2trash          # v4.4 : suppression vers la corbeille
     _TRASH_OK = True
@@ -33,83 +43,6 @@ logging.basicConfig(
 )
 log = logging.getLogger("vfe")
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  Config
-# ─────────────────────────────────────────────────────────────────────────────
-CONFIG_FILE = "VFE_Config.json"
-@dataclass
-class AppConfig:
-    """v4.2 : schéma unique de la configuration — source de vérité des clés,
-    types et valeurs par défaut. Ajouter une option = ajouter un champ ici
-    + une ligne dans App._collect_config()."""
-    video_path:      str  = ""
-    output_dir:      str  = ""
-    work_dir:        str  = ""
-    generic_name:    str  = "capture"
-    mode:            str  = "count"
-    count_val:       int  = 20
-    interval_val:    int  = 30
-    thumb_size:      int  = 150
-    col_count:       int  = 4
-    preview_size:    int  = 280
-    window_size:     str  = "auto"
-    sash_left:       int  = 310
-    sash_right:      int  = 700
-    confirm_delete:  bool = True
-    black_filter:    bool = True
-    mark_key:        str  = "s"
-    marked_files:    list = field(default_factory=list)
-    hdr_tonemap:     str  = "hable"
-    last_video_dir:  str  = ""
-    last_output_dir: str  = ""
-    last_work_dir:   str  = ""
-    window_h:        int  = 1080
-
-DEFAULT_CONFIG = asdict(AppConfig())   # rétro-compatible (dict des défauts)
-
-def _cast_value(val, default):
-    """Convertit val vers le type de default ; retombe sur default si invalide."""
-    try:
-        if isinstance(default, bool):
-            if isinstance(val, bool): return val
-            if isinstance(val, str):  return val.strip().lower() in ("1","true","oui","yes","on")
-            return bool(val)
-        if isinstance(default, int):
-            return int(float(val))
-        if isinstance(default, list):
-            return list(val) if isinstance(val, (list, tuple)) else []
-        if isinstance(default, str):
-            return default if val is None else str(val)
-        return val
-    except (ValueError, TypeError):
-        return default
-
-def _coerce_config(raw):
-    """Fusionne raw avec les défauts du schéma et convertit chaque valeur.
-    v4.2 : une config corrompue ne peut plus faire planter le démarrage."""
-    if not isinstance(raw, dict):
-        raw = {}
-    out = {}
-    defaults = AppConfig()
-    for name, default in asdict(defaults).items():
-        out[name] = _cast_value(raw.get(name, default), default)
-    return out
-
-def load_config():
-    if os.path.exists(CONFIG_FILE):
-        try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                return _coerce_config(json.load(f))
-        except Exception:
-            log.exception("Config illisible — valeurs par défaut utilisées")
-    return _coerce_config({})
-
-def save_config(cfg):
-    try:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=2, ensure_ascii=False)
-    except Exception:
-        log.exception("Échec de la sauvegarde de la configuration")
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Palette
@@ -171,60 +104,6 @@ def _get_font(font_tuple):
         _FONT_CACHE[key] = f
     return f
 
-def hms(s):
-    s = int(max(0, s))
-    h, r = divmod(s, 3600)
-    m, sec = divmod(r, 60)
-    return f"{h}h {m:02d}m {sec:02d}s" if h else f"{m}m {sec:02d}s"
-
-def tc_str(s):
-    s = int(max(0, s))
-    h, r = divmod(s, 3600)
-    m, sec = divmod(r, 60)
-    return f"{h:02d}h{m:02d}m{sec:02d}s"
-
-def dir_parent_label(path):
-    """Libellé court d'un dossier : 'parent/dossier' quand c'est possible."""
-    p = os.path.normpath(path)
-    base = os.path.basename(p)
-    if not base:
-        return p
-
-    parent = os.path.basename(os.path.dirname(p))
-    if parent and parent != base:
-        return f"{parent}/{base}"
-
-    return base
-
-def ffmpeg_available():
-    try:
-        r = subprocess.run(["ffmpeg", "-version"], capture_output=True, timeout=5)
-        return r.returncode == 0
-    except Exception:
-        return False
-
-def get_display_size(path, raw_w, raw_h):
-    try:
-        cmd = [
-            "ffprobe", "-v", "error",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=width,height,sample_aspect_ratio,display_aspect_ratio",
-            "-of", "csv=p=0", path
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-        if result.returncode == 0:
-            parts = result.stdout.strip().split(",")
-            if len(parts) >= 4:
-                sar_str = parts[2].strip()
-                if sar_str and ":" in sar_str:
-                    sar_n, sar_d = sar_str.split(":")
-                    sar_n, sar_d = int(sar_n), int(sar_d)
-                    if sar_n > 0 and sar_d > 0 and (sar_n, sar_d) != (1, 1):
-                        return int(round(raw_w * sar_n / sar_d)), raw_h
-    except Exception:
-        pass
-    return raw_w, raw_h
-
 def trash_files(paths):
     """v4.4/v4.5 : envoie une liste de fichiers à la corbeille en UNE opération
     (= une seule restauration groupée possible depuis la corbeille).
@@ -253,220 +132,6 @@ def trash_files(paths):
             errors.append((p, ex))
     return errors
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  Extraction ffmpeg — commande corrigée v2.9
-# ─────────────────────────────────────────────────────────────────────────────
-def build_ffmpeg_cmd(vpath, t_sec, out_path, disp_w, disp_h, sar_applied):
-    """
-    Construit la commande ffmpeg qui produit un JPEG en full range correct.
-
-    Points clés :
-      - scale=out_range=full  : force la conversion limited→full range (16-235 → 0-255)
-      - -pix_fmt yuvj420p     : indique à l'encodeur JPEG que les données
-                                sont en full range (le 'j' = JPEG range)
-      - -q:v 2                : qualité JPEG élevée (1=max, 31=min)
-      - -ss avant -i          : seek rapide sur keyframe
-
-    Sans ces flags, ffmpeg copie les valeurs YUV telles quelles dans le JPEG,
-    ce qui laisse les noirs à 16/255 et les blancs à 235/255 → image délavée.
-    """
-    # Filtre vidéo : scale avec conversion de plage + resize si SAR
-    if sar_applied:
-        vf = f"scale={disp_w}:{disp_h}:out_range=full:flags=lanczos"
-    else:
-        # scale=iw:ih force quand même la conversion de plage sans redimensionner
-        vf = "scale=iw:ih:out_range=full"
-
-    cmd = [
-        "ffmpeg", "-y",
-        "-ss", f"{t_sec:.6f}",
-        "-i", vpath,
-        "-frames:v", "1",
-        "-vf", vf,
-        "-pix_fmt", "yuvj420p",   # ← CLÉ : JPEG full range
-        "-q:v", "2",
-        out_path
-    ]
-    return cmd
-
-
-def build_ffmpeg_cmd_fallback(vpath, t_sec, out_path, disp_w, disp_h, sar_applied):
-    """
-    Commande alternative si la première échoue.
-    Utilise -vf format=yuvj420p qui force également le full range
-    via le changement de format pixel.
-    """
-    filters = []
-    if sar_applied:
-        filters.append(f"scale={disp_w}:{disp_h}:flags=lanczos")
-    filters.append("format=yuvj420p")   # conversion full range
-    vf = ",".join(filters)
-
-    cmd = [
-        "ffmpeg", "-y",
-        "-ss", f"{max(0, t_sec - 1):.6f}",   # seek légèrement en arrière
-        "-i", vpath,
-        "-frames:v", "1",
-        "-vf", vf,
-        "-q:v", "2",
-        out_path
-    ]
-    return cmd
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  Détection HDR et pipeline HDR→SDR  (nouveau v3.0)
-# ─────────────────────────────────────────────────────────────────────────────
-
-HDR_TRANSFERS  = {"smpte2084", "arib-std-b67", "smpte428", "bt2020-10", "bt2020-12"}
-HDR_PRIMARIES  = {"bt2020"}
-HDR_COLORSPACES= {"bt2020nc", "bt2020c", "smpte2085", "ictcp"}
-
-def detect_hdr(vpath):
-    """
-    Analyse le flux vidéo avec ffprobe et retourne un dict :
-      {
-        "is_hdr": bool,
-        "transfer": str,   # ex. "smpte2084"
-        "primaries": str,  # ex. "bt2020"
-        "colorspace": str, # ex. "bt2020nc"
-        "color_range": str,# ex. "tv"
-      }
-    """
-    info = {"is_hdr": False, "transfer": "", "primaries": "", "colorspace": "", "color_range": ""}
-
-    try:
-        cmd = [
-            "ffprobe", "-v", "error",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=color_transfer,color_primaries,color_space,color_range",
-            "-of", "json",
-            vpath
-        ]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-
-        if r.returncode == 0:
-            data = json.loads(r.stdout)
-            streams = data.get("streams", [{}])
-            s = streams[0] if streams else {}
-
-            transfer    = s.get("color_transfer",  "").lower()
-            primaries   = s.get("color_primaries", "").lower()
-            colorspace  = s.get("color_space",     "").lower()
-            color_range = s.get("color_range",     "").lower()
-
-            is_hdr = (
-                transfer   in HDR_TRANSFERS  or
-                primaries  in HDR_PRIMARIES  or
-                colorspace in HDR_COLORSPACES
-            )
-
-            info = {
-                "is_hdr":      is_hdr,
-                "transfer":    transfer,
-                "primaries":   primaries,
-                "colorspace":  colorspace,
-                "color_range": color_range,
-            }
-    except Exception:
-        pass
-
-    return info
-
-
-def zscale_available():
-    """Vérifie que le build ffmpeg inclut libzimg (nécessaire pour zscale)."""
-    try:
-        r = subprocess.run(["ffmpeg", "-filters"], capture_output=True, text=True, timeout=10)
-        return "zscale" in r.stdout
-    except Exception:
-        return False
-
-
-def build_ffmpeg_cmd_hdr(vpath, t_sec, out_path, disp_w, disp_h, sar_applied,
-                          hdr_info, tonemap_algo="hable"):
-    """
-    Pipeline HDR→SDR via zscale + tonemap + zscale.
-    C'est la méthode correcte pour les vidéos PQ/HLG BT.2020.
-
-    Étapes :
-      1. zscale : conversion vers linear light (transfer=linear), primaires bt709
-      2. tonemap : compression de la plage de luminance HDR→SDR (algo configurable)
-      3. zscale : signal SDR en bt709, full range
-      4. format=rgb24 puis conversion JPEG
-
-    Paramètres tonemap_algo : hable (doux, cinéma), mobius (équilibré), reinhard (simple)
-    """
-    # Détermine si la source est HLG ou PQ pour le filtre zscale
-    transfer_in = hdr_info.get("transfer", "smpte2084")
-    if "hlg" in transfer_in or "arib" in transfer_in:
-        zscale_tin = "arib-std-b67"
-    else:
-        zscale_tin = "smpte2084"  # PQ (HDR10)
-
-    # Chaîne de filtres
-    filters = []
-
-    # Resize si SAR non-carré, avant toute conversion de couleur
-    if sar_applied:
-        filters.append(f"scale={disp_w}:{disp_h}:flags=lanczos")
-
-    # Étape 1 : linéarisation + conversion primaires BT.2020 → BT.709
-    filters.append(
-        f"zscale=t=linear:npl=100:p=bt709:m=bt709:r=tv"
-    )
-    # Étape 2 : tone mapping (HDR → SDR)
-    filters.append(
-        f"tonemap=tonemap={tonemap_algo}:desat=0:peak=0"
-    )
-    # Étape 3 : signal SDR propre, full range, BT.709
-    filters.append(
-        "zscale=t=bt709:p=bt709:m=bt709:r=pc"
-    )
-    # Étape 4 : format pixel pour l'encodeur JPEG
-    filters.append("format=rgb24")
-
-    vf = ",".join(filters)
-
-    cmd = [
-        "ffmpeg", "-y",
-        "-ss", f"{t_sec:.6f}",
-        "-i", vpath,
-        "-frames:v", "1",
-        "-vf", vf,
-        "-q:v", "2",
-        out_path
-    ]
-    return cmd
-
-
-def build_ffmpeg_cmd_hdr_fallback(vpath, t_sec, out_path, disp_w, disp_h, sar_applied):
-    """
-    Fallback HDR si zscale est absent : utilise colorspace + eq pour
-    au moins ramener une image lisible (moins précis mais fonctionnel).
-    """
-    filters = []
-    if sar_applied:
-        filters.append(f"scale={disp_w}:{disp_h}:flags=lanczos")
-
-    # Conversion approximative HDR→SDR sans zscale
-    # colorspace gère BT.2020→BT.709, puis on force full range
-    filters.append("colorspace=bt709:iall=bt2020:fast=1")
-    filters.append("scale=iw:ih:out_range=full")
-    filters.append("format=yuvj420p")
-
-    vf = ",".join(filters)
-
-    cmd = [
-        "ffmpeg", "-y",
-        "-ss", f"{t_sec:.6f}",
-        "-i", vpath,
-        "-frames:v", "1",
-        "-vf", vf,
-        "-q:v", "2",
-        out_path
-    ]
-    return cmd
 
 class DarkButton(tk.Canvas):
     STYLES = {
@@ -889,18 +554,6 @@ def setup_style(root):
     s.map("TCombobox",fieldbackground=[("readonly",C["input"])],
           bordercolor=[("focus",C["accent"])])
 
-
-def _parse_tc_from_filename(fname):
-    import re
-    m=re.search(r'_(\d{2})h(\d{2})m(\d{2})s',fname)
-    if m: return int(m.group(1))*3600+int(m.group(2))*60+int(m.group(3))
-    return 0
-
-def is_black_frame(arr_rgb, threshold=5):
-    """Détecte une frame noire depuis un array RGB numpy."""
-    sample = arr_rgb[::8, ::8]
-    lum = 0.299*sample[:,:,0] + 0.587*sample[:,:,1] + 0.114*sample[:,:,2]
-    return float(lum.mean()) < threshold
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2711,34 +2364,13 @@ class App(tk.Tk):
         if len(self.sel)==1: self._show_preview(next(iter(self.sel)))
 
     def _compute_targets(self):
-        dur = self.video_info["duration"]
-        fps = self.video_info.get("fps") or 25.0
-
-        # v4.11 (E77) : marge de sécurité pour la dernière frame.
-        # Un seek exactement à la durée tombe souvent après la dernière image décodable.
-        safe = min(0.5, max(0.1, 2.0 / max(fps, 1.0)))
-        end = max(0.0, dur - safe)
-
-        if end <= 0.0:
-            return [0.0]
-
-        if self.v_mode.get() == "count":
-            n = max(1, self.v_count.get())
-
-            if n == 1:
-                return [0.0]
-
-            return [i * end / (n - 1) for i in range(n)]
-
-        iv = max(1, self.v_intv.get())
-        targets = []
-        t = 0.0
-
-        while t <= end + 0.001:
-            targets.append(min(t, end))
-            t += iv
-
-        return targets
+        return compute_targets(
+            duration=self.video_info["duration"],
+            fps=self.video_info.get("fps"),
+            mode=self.v_mode.get(),
+            count=self.v_count.get(),
+            interval=self.v_intv.get(),
+        )
 
     # ── Extraction ────────────────────────────────────────────────────────────
     def _start_extraction(self):
