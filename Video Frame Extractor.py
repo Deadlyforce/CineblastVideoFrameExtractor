@@ -1698,8 +1698,6 @@ class App(tk.Tk):
                                 anchor="w",padx=10,pady=8)
         self._info_lbl.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(0,6)); row+=1
 
-
-
         # Dossier d'Extraction
         row=self._sect(inner,row,"Dossier d'Extraction")
         f2=tk.Frame(inner,bg=C["bg"]); f2.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(2,6))
@@ -1784,14 +1782,12 @@ class App(tk.Tk):
         self._copy_btn.grid(row=row,column=0,pady=(4,4),padx=PAD,sticky="ew")
         self._copy_btn.set_state("disabled"); row+=1
 
-
-
         # Mode capture
         row=self._sect(inner,row,"Mode de capture")
         self._pill=PillSelector(inner,[("Nombre d'images","count"),("Intervalle (s)","interval")],
                                 self.v_mode,command=self._on_mode_change,bg=C["bg"])
         self._pill.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(2,6)); row+=1
-        self._sl_count=DarkSlider(inner,from_=5,to=500,resolution=5,variable=self.v_count,
+        self._sl_count=DarkSlider(inner,from_=5,to=1000,resolution=5,variable=self.v_count,
                                   label="Nombre d'images",unit="images",
                                   command=self._on_slider_change,bg=C["bg"])
         self._sl_count.grid(row=row,column=0,sticky="ew",padx=PAD+4,pady=(0,6)); row+=1
@@ -2514,15 +2510,9 @@ class App(tk.Tk):
         self._auto_save_config()
 
     def _update_derived(self):
-        dur=self.video_info.get("duration",0); n=self.v_count.get(); iv=self.v_intv.get()
-        if self.v_mode.get()=="count":
-            if dur and n>1: self._sl_count.set_info(f"≈ {hms(dur/(n-1))} entre chaque capture")
-            elif dur and n==1: self._sl_count.set_info("1 seule image (début du film)")
-            else: self._sl_count.set_info("")
-        else:
-            if dur and iv>0: self._sl_intv.set_info(f"→ {int(dur/iv)+1} photo(s) au total")
-            else: self._sl_intv.set_info("")
-        self._update_capture_plan()   # v4.14 (UX7)
+        # v4.15 (E81) : les infos sous les sliders sont supprimées car
+        # redondantes avec le bloc "Plan" unifié (_update_capture_plan).
+        self._update_capture_plan()
 
     def _update_capture_plan(self):
         """v4.14 (UX7) : affiche un résumé du plan de capture courant."""

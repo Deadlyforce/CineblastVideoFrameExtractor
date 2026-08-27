@@ -887,3 +887,6 @@ frame=    0 fps=0.0 q=0.0 Lsize=N/A time=N/A bitrate=N/A speed=N/A elapsed=0:00:
 2026-08-27 09:16:07  INFO     Démarrage — ffmpeg présent | corbeille (send2trash) ACTIVE
 2026-08-27 09:16:07  INFO     Vidéo chargée : Backrooms (2026).mp4 | 1h 50m 28s | 3836x2072 | 23.98 fps
 2026-08-27 09:16:07  INFO     Analyse couleur : HDR
+2026-08-27 09:24:46  INFO     Démarrage — ffmpeg présent | corbeille (send2trash) ACTIVE
+2026-08-27 09:24:47  INFO     Vidéo chargée : Backrooms (2026).mp4 | 1h 50m 28s | 3836x2072 | 23.98 fps
+2026-08-27 09:24:47  INFO     Analyse couleur : HDR
