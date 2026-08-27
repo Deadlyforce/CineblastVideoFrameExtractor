@@ -321,25 +321,7 @@ def detect_hdr(vpath):
       }
     """
     info = {"is_hdr": False, "transfer": "", "primaries": "", "colorspace": "", "color_range": ""}
-    try:
-        cmd = [
-            "ffprobe", "-v", "error",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=color_transfer,color_primaries,color_space,color_range",
-            "-of", "csv=p=0",
-            vpath
-        ]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-        if r.returncode == 0:
-            parts = [p.strip().lower() for p in r.stdout.strip().split(",")]
-            # ffprobe order: color_range, color_space, color_transfer, color_primaries
-            # but output order matches show_entries order
-            # We use a more robust named approach via json
-            pass
-    except Exception:
-        pass
 
-    # Méthode robuste via JSON
     try:
         cmd = [
             "ffprobe", "-v", "error",
@@ -349,20 +331,23 @@ def detect_hdr(vpath):
             vpath
         ]
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+
         if r.returncode == 0:
-            import json as _json
-            data = _json.loads(r.stdout)
+            data = json.loads(r.stdout)
             streams = data.get("streams", [{}])
             s = streams[0] if streams else {}
-            transfer   = s.get("color_transfer",  "").lower()
-            primaries  = s.get("color_primaries", "").lower()
-            colorspace = s.get("color_space",     "").lower()
-            color_range= s.get("color_range",     "").lower()
+
+            transfer    = s.get("color_transfer",  "").lower()
+            primaries   = s.get("color_primaries", "").lower()
+            colorspace  = s.get("color_space",     "").lower()
+            color_range = s.get("color_range",     "").lower()
+
             is_hdr = (
                 transfer   in HDR_TRANSFERS  or
                 primaries  in HDR_PRIMARIES  or
                 colorspace in HDR_COLORSPACES
             )
+
             info = {
                 "is_hdr":      is_hdr,
                 "transfer":    transfer,
@@ -372,6 +357,7 @@ def detect_hdr(vpath):
             }
     except Exception:
         pass
+
     return info
 
 
@@ -2259,42 +2245,6 @@ class App(tk.Tk):
         self._vg.set_hover(path)
         self._cv.config(cursor="hand2" if path else "")
 
-    def _on_info_canvas_configure(self, event):
-        """Le canvas change de taille → on ajuste la largeur du contenu et on redessine le fond."""
-        w = event.width
-        self.info_canvas.itemconfig("content", width=w)   # force la largeur du contenu
-        self._draw_info_block_bg()
-
-    def _on_info_content_configure(self, event):
-        self.info_content.update_idletasks()
-        h = self.info_content.winfo_reqheight()
-        self.info_canvas.configure(height=h)
-        self._draw_info_block_bg()
-
-    def _draw_info_block_bg(self):
-        cv = self.info_canvas
-        cv.delete("bg")
-        w = cv.winfo_width()
-        h = cv.winfo_height()
-        if w < 4 or h < 4:
-            return
-        r = 10
-        # Fond arrondi
-        pts = [r,0, w-r,0, w,0, w,r, w,h-r, w,h,
-            w-r,h, r,h, 0,h, 0,h-r, 0,r, 0,0]
-        cv.create_polygon(pts, smooth=True, fill=C["info_bg"], outline="", tags="bg")
-
-        # Bordure brillante — coins haut-gauche et haut-droit
-        cv.create_arc(0, 0, 2*r, 2*r,
-                    start=90, extent=90,          # ← haut-gauche ✓
-                    style="arc", outline=C["t1"], width=1, tags="bg")
-        cv.create_arc(w-2*r, 0, w, 2*r,
-                    start=0, extent=90,           # ← haut-droit ✓
-                    style="arc", outline=C["t1"], width=1, tags="bg")
-        # Segment horizontal qui relie les deux arcs
-        cv.create_line(r, 0, w-r, 0,
-                    fill=C["t1"], width=1, tags="bg")
-
     def _build_right(self):
         r=self._rf; r.rowconfigure(1,weight=1); r.columnconfigure(0,weight=1)
         hdr=tk.Frame(r,bg=C["panel"],height=38); hdr.grid(row=0,column=0,sticky="ew")
@@ -2332,9 +2282,6 @@ class App(tk.Tk):
         self.bind("<Right>", self._on_arrow_key)
         self.bind("<Up>",    self._on_arrow_key)
         self.bind("<Down>",  self._on_arrow_key)
-
-    def _on_window_configure(self, event):
-        pass
 
     def _on_close(self):
         self._cfg["window_h"] = self.winfo_height()
@@ -2606,12 +2553,6 @@ class App(tk.Tk):
         log.info("Vidéo chargée : %s | %s | %dx%d | %.2f fps",
                  os.path.basename(path), hms(dur), raw_w, raw_h, fps)        
 
-    def _force_info_redraw(self):
-        """Force un redimensionnement et redessine le fond du bloc d'infos."""
-        self.info_content.update_idletasks()
-        h = self.info_content.winfo_reqheight()
-        self.info_canvas.configure(height=h)
-        self._draw_info_block_bg()
 
     # ── HDR ───────────────────────────────────────────────────────────────────
     def _detect_hdr_async(self, path):
@@ -3582,11 +3523,6 @@ class App(tk.Tk):
         w["label"].config(image=imgtk)
         w["label"].image = imgtk
 
-    def _toggle_mark(self,path):
-        if path in self.marked: self.marked.discard(path)
-        else: self.marked.add(path)
-        self._update_mark_overlay(path); self._upd_marked_badge(); self._auto_save_config()
-
     def _unmark_all(self):
         for p in list(self.marked): self.marked.discard(p); self._update_mark_overlay(p)
         self._upd_marked_badge(); self._auto_save_config()
@@ -3822,15 +3758,6 @@ class App(tk.Tk):
             return
         self._status("🔁 Rafraîchissement en cours…", duration=0)
         self._reload_extraction_folder()
-
-    def _reload_done(self, loaded):
-        for img, fpath, tc in loaded:
-            entry = {"img": img, "path": fpath, "tc": tc}
-            self.thumbs.append(entry)
-            self.thumb_by_path[fpath] = entry
-        self._badge_total.config(text=f"{len(self.thumbs)} image(s)")
-        self._prog_lbl.config(text=f"Chargement des vignettes… 0 / {len(self.thumbs)}")
-        self._build_thumbs_async(0)
 
     def _reload_done_lazy(self, entries):
         """Stocke les métadonnées sans charger les pixels, puis construit les vignettes une par une."""
