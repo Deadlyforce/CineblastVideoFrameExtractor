@@ -1820,9 +1820,9 @@ class App(tk.Tk):
         self._winsize_combo=RoundedCombo(wf,_winsize_list,self._v_winsize_var,width=120,bg=C["bg"])
         self._winsize_combo.grid(row=0,column=0,sticky="w")
         DarkButton(wf,"Appliquer",
-                   lambda:(self.v_winsize.set(self._v_winsize_var.get()),
-                           self._apply_window_size(self._v_winsize_var.get())),
-                   width=0,height=28).grid(row=0,column=1,sticky="ew",padx=(8,0))
+                lambda:(self.v_winsize.set(self._v_winsize_var.get()),
+                        self._apply_window_size(self._v_winsize_var.get())),
+                width=0,height=28,anchor="center").grid(row=0,column=1,sticky="ew",padx=(8,0))
         HSep(inner).grid(row=row,column=0,sticky="ew",padx=PAD,pady=6); row+=1
 
         # Actions
@@ -3143,9 +3143,11 @@ class App(tk.Tk):
         # ↓ toujours conserver la hauteur actuelle de la fenêtre
         current_h = self.winfo_height()
         cy = self.winfo_y()
-
+        cx0 = self.winfo_x()   # v4.13 (UX5) : mémorise la position horizontale actuelle
         def _apply(w):
-            cx = max(0, (sw - w) // 2)
+            # v4.13 (UX5) : conserve la position au lieu de recentrer,
+            # en restant dans les limites de l'écran.
+            cx = max(0, min(cx0, sw - w))
             self.geometry(f"{w}x{current_h}+{cx}+{cy}")  # ← current_h figé au début
             self.update_idletasks()
             try:
@@ -3911,9 +3913,9 @@ class App(tk.Tk):
         win_target = min(max(s0 + center_need + right_need + SASH_W * 2 + 4,
                              LEFT_MIN_W + 300), sw - 40)
 
-        cy = max(0, self.winfo_y())
-        cx = max(0, (sw - win_target) // 2)
-
+        cy = self.winfo_y()
+        cx0 = self.winfo_x()   # v4.13 (UX5) : position actuelle conservée
+        cx = max(0, min(cx0, sw - win_target))
         self.geometry(f"{win_target}x{target_h}+{cx}+{cy}")
         self.update_idletasks()
 
