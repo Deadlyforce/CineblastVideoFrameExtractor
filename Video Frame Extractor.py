@@ -183,6 +183,19 @@ def tc_str(s):
     m, sec = divmod(r, 60)
     return f"{h:02d}h{m:02d}m{sec:02d}s"
 
+def dir_parent_label(path):
+    """Libellé court d'un dossier : 'parent/dossier' quand c'est possible."""
+    p = os.path.normpath(path)
+    base = os.path.basename(p)
+    if not base:
+        return p
+
+    parent = os.path.basename(os.path.dirname(p))
+    if parent and parent != base:
+        return f"{parent}/{base}"
+
+    return base
+
 def ffmpeg_available():
     try:
         r = subprocess.run(["ffmpeg", "-version"], capture_output=True, timeout=5)
@@ -1746,7 +1759,7 @@ class App(tk.Tk):
         def update_workdir_btn(*args):
             p = self.v_workdir.get()
             if p and os.path.isdir(p):
-                self._workdir_btn.set_text(os.path.basename(p.rstrip("/\\")))
+                self._workdir_btn.set_text(dir_parent_label(p))
             else:
                 self._workdir_btn.set_text("Parcourir")
         self.v_workdir.trace_add("write", update_workdir_btn)
@@ -1818,16 +1831,19 @@ class App(tk.Tk):
         act.columnconfigure(0,weight=1); act.columnconfigure(1,weight=1)   # v4.6 : les 2 colonnes absorbent l'espace
         GAP=6
         self._run_btn=DarkButton(act,"▶  Extraire les frames",self._start_extraction,
-                                 style="accent",width=0,height=36,font=F_BOLD)
+                                 style="accent",width=0,height=36,font=F_BOLD,anchor="center")
         self._run_btn.grid(row=0,column=0,columnspan=2,sticky="ew",pady=(0,5))
+
         self._cancel_btn=DarkButton(act,"✕  Annuler",self._cancel_extraction,
-                                   style="ghost",width=0,height=30)
+                                   style="ghost",width=0,height=30,anchor="center")
         self._cancel_btn.grid(row=1,column=0,sticky="ew",padx=(0,GAP)); self._cancel_btn.set_state("disabled")
+
         self._del_btn=DarkButton(act,"🗑  Supprimer",self._delete_selected,
-                                 style="danger",width=0,height=30)
+                                 style="danger",width=0,height=30,anchor="center")
         self._del_btn.grid(row=1,column=1,sticky="ew"); self._del_btn.set_state("disabled")
+
         DarkButton(act,"🗂  Vider le dossier d'extraction",self._clear_output_dir,
-                   style="danger",width=0,height=30).grid(row=2,column=0,columnspan=2,sticky="ew",pady=(5,0))
+                   style="danger",width=0,height=30,anchor="center").grid(row=2,column=0,columnspan=2,sticky="ew",pady=(5,0))
 
         chk=tk.Frame(inner,bg=C["bg"]); chk.grid(row=row,column=0,sticky="w",padx=PAD,pady=(6,0)); row+=1
         tk.Checkbutton(chk,text="Demander confirmation avant suppression",
@@ -2676,6 +2692,7 @@ class App(tk.Tk):
         self._badge_total.config(text="0 image(s)"); self._badge_sel.config(text="")
         self._del_btn.set_state("disabled"); self._run_btn.set_state("disabled")
         self._cancel_btn.set_state("normal"); self._cancel=False
+        self._extract_start=time.time()   # v4.10 (UX3) : départ du calcul d'ETA
         # v4.1 : état du flush ordonné (les workers terminent dans le désordre)
         self._next_flush=0; self._flushed=0; self._flush_tot=len(targets)
         self._pending_results={}; self._failed_tcs=[]     # v4.5 : échecs
@@ -2928,19 +2945,44 @@ class App(tk.Tk):
         return np.clip((f-16.0)*(255.0/219.0),0,255).astype(np.uint8)
 
     # ── Callbacks ─────────────────────────────────────────────────────────────
+    def _extract_progress_text(self, done, tot, t, extra=""):
+        base = f"{done}/{tot}  ·  {hms(t)}"
+
+        if extra:
+            base += f"  {extra}"
+
+        start = getattr(self, "_extract_start", None)
+        if not start or done <= 0 or tot <= 0:
+            return base
+
+        elapsed = time.time() - start
+        if elapsed <= 0:
+            return base
+
+        remaining = max(0.0, (tot - done) * (elapsed / done))
+
+        if remaining < 60:
+            eta = f"{int(remaining)} s"
+        else:
+            eta = f"{int(remaining // 60)}m{int(remaining % 60):02d}s"
+
+        return f"{base}  ·  ⏳ {eta}"
+
     def _black_skipped(self,t,done,tot,pct):
         self._prog.set(pct)
-        self._prog_lbl.config(text=f"{done}/{tot}  ·  {hms(t)}  🔲 noire ignorée")
+        self._prog_lbl.config(text=self._extract_progress_text(done, tot, t, "🔲 noire"))
 
     def _on_worker_result(self, i, kind, img, fpath, t, info=""):
         """v4.1 : résultat d'un worker ffmpeg (kind = "ok" / "black" / "fail").
         Bufferise puis affiche strictement dans l'ordre du plan.
         v4.5 : les échecs sont comptés, journalisés et affichés en fin d'extraction."""
         self._pending_results[i] = (kind, img, fpath, t, info)
+
         while self._next_flush in self._pending_results:
             k, im, fp, tc, inf = self._pending_results.pop(self._next_flush)
             self._flushed += 1
             pct = self._flushed / max(1, self._flush_tot) * 100
+
             if k == "ok":
                 self._frame_done(im, fp, tc, self._flushed, self._flush_tot, pct)
             elif k == "black":
@@ -2949,6 +2991,12 @@ class App(tk.Tk):
             else:   # "fail"
                 self._failed_tcs.append(tc)
                 log.warning("Échec frame %d (%s) : %s", i + 1, hms(tc), inf or "raison inconnue")
+
+                if not self._cancel:
+                    self._prog.set(pct)
+                    self._prog_lbl.config(
+                        text=self._extract_progress_text(self._flushed, self._flush_tot, tc, "⚠ échec"))
+
             self._next_flush += 1
 
     def _frame_done(self,img,fpath,t,done,tot,pct):
@@ -2956,8 +3004,11 @@ class App(tk.Tk):
         self.thumbs.append(entry)
         self.thumb_by_path[fpath]=entry            # v4
         pos=len(self.thumbs)-1
-        self._prog.set(pct); self._prog_lbl.config(text=f"{done}/{tot}  ·  {hms(t)}")
+
+        self._prog.set(pct)
+        self._prog_lbl.config(text=self._extract_progress_text(done, tot, t))
         self._badge_total.config(text=f"{len(self.thumbs)} image(s)")
+
         self._add_thumb(fpath,pos)
         self._adjust_center_width()
 
