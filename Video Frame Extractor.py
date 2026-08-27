@@ -2662,14 +2662,34 @@ class App(tk.Tk):
         if len(self.sel)==1: self._show_preview(next(iter(self.sel)))
 
     def _compute_targets(self):
-        dur=self.video_info["duration"]
-        if self.v_mode.get()=="count":
-            n=max(1,self.v_count.get())
-            return [0.0] if n==1 else [i*dur/(n-1) for i in range(n)]
-        else:
-            iv=max(1,self.v_intv.get()); targets=[]; t=0.0
-            while t<=dur+0.001: targets.append(min(t,dur)); t+=iv
-            return targets
+        dur = self.video_info["duration"]
+        fps = self.video_info.get("fps") or 25.0
+
+        # v4.11 (E77) : marge de sécurité pour la dernière frame.
+        # Un seek exactement à la durée tombe souvent après la dernière image décodable.
+        safe = min(0.5, max(0.1, 2.0 / max(fps, 1.0)))
+        end = max(0.0, dur - safe)
+
+        if end <= 0.0:
+            return [0.0]
+
+        if self.v_mode.get() == "count":
+            n = max(1, self.v_count.get())
+
+            if n == 1:
+                return [0.0]
+
+            return [i * end / (n - 1) for i in range(n)]
+
+        iv = max(1, self.v_intv.get())
+        targets = []
+        t = 0.0
+
+        while t <= end + 0.001:
+            targets.append(min(t, end))
+            t += iv
+
+        return targets
 
     # ── Extraction ────────────────────────────────────────────────────────────
     def _start_extraction(self):
