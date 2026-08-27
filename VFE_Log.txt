@@ -875,3 +875,12 @@ Output #0, image2, to 'C:\Users\norma\AppData\Local\Temp\vfe_ficnhii3.jpg':
 [out#0/image2 @ 00000195eda831c0] Output file is empty, nothing was encoded(check -ss / -t / -frames parameters if used)
 frame=    0 fps=0.0 q=0.0 Lsize=N/A time=N/A bitrate=N/A speed=N/A elapsed=0:00:00.43
 2026-08-27 08:54:18  INFO     Extraction terminée : 57 image(s), 2 noire(s) filtrée(s), 1 échec(s)
+2026-08-27 09:00:40  INFO     Démarrage — ffmpeg présent | corbeille (send2trash) ACTIVE
+2026-08-27 09:00:40  INFO     Vidéo chargée : Backrooms (2026).mp4 | 1h 50m 28s | 3836x2072 | 23.98 fps
+2026-08-27 09:00:40  INFO     Analyse couleur : HDR
+2026-08-27 09:00:48  INFO     Vider le dossier : 57 fichier(s) → corbeille
+2026-08-27 09:01:00  INFO     Extraction lancée : 50 frame(s) ciblée(s) — Backrooms (2026).mp4
+2026-08-27 09:01:16  INFO     Extraction terminée : 45 image(s), 5 noire(s) filtrée(s), 0 échec(s)
+2026-08-27 09:07:01  INFO     Démarrage — ffmpeg présent | corbeille (send2trash) ACTIVE
+2026-08-27 09:07:01  INFO     Vidéo chargée : Backrooms (2026).mp4 | 1h 50m 28s | 3836x2072 | 23.98 fps
+2026-08-27 09:07:01  INFO     Analyse couleur : HDR

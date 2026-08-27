@@ -1885,8 +1885,10 @@ class App(tk.Tk):
         tk.Frame(mtb,bg=C["border"],width=1).pack(side="left",fill="y",pady=2)
         tk.Label(mtb,text="  Marquer :",font=F_SMALL,fg=C["t3"],
                  bg=C["panel2"]).pack(side="left")
+        vcmd = (self.register(self._validate_mark_key_input), '%P')
         self._mark_key_entry=DarkEntry(mtb,textvariable=self.v_mark_key,
-                                       width=3,font=F_BOLD,justify="center")
+                                        width=3,font=F_BOLD,justify="center",
+                                        validate="key", validatecommand=vcmd)
         self._mark_key_entry.pack(side="left",padx=(4,0),ipady=2)
         tk.Label(mtb,text="  (raccourci)",font=F_SMALL,fg=C["t3"],
                  bg=C["panel2"]).pack(side="left")
@@ -2398,10 +2400,22 @@ class App(tk.Tk):
         if self._mark_binding_id:
             try: self.unbind(self._mark_binding_id[0],self._mark_binding_id[1])
             except Exception: pass
-        key=self.v_mark_key.get().strip()
-        if not key: return
-        bid=self.bind(f"<KeyPress-{key}>",self._on_mark_key,add=True)
-        self._mark_binding_id=(f"<KeyPress-{key}>",bid)
+            self._mark_binding_id = None
+
+        key = self.v_mark_key.get().strip()
+        if not key:
+            return
+
+        try:
+            bid = self.bind(f"<KeyPress-{key}>", self._on_mark_key, add=True)
+            self._mark_binding_id = (f"<KeyPress-{key}>", bid)
+        except tk.TclError:
+            # v4.12 (UX8) : filet de sécurité si le caractère n'est pas un keysym valide
+            self._status(f"⚠  Touche non supportée : '{key}'", duration=4000)
+
+    def _validate_mark_key_input(self, value_if_allowed):
+        """v4.12 (UX8) : limite la saisie du raccourci à un seul caractère."""
+        return len(value_if_allowed) <= 1
 
     def _show_full_tooltip(self, widget, text):
         """Affiche un tooltip immédiat avec le texte complet, fond gris, coins arrondis."""
