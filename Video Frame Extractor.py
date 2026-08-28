@@ -1006,6 +1006,7 @@ class App(tk.Tk):
         self.thumb_by_path={}                                       # v4 : accès O(1) par chemin
         self.sel=set(); self.marked=set()       # v4 : sets de CHEMINS
         self._cancel=False; self._prev_ref=None; self._last_click_path=None
+        self._extracting=False; self._failed_frames=[]    # U1 : couples (index_plan, timecode) des échecs
         self._hdr_info={}          # résultat detect_hdr() pour la vidéo courante
         self._zscale_ok=None       # cache du test zscale_available()
         self._hdr_detect_done=threading.Event()   # v4.8 (point 9)
@@ -1486,7 +1487,11 @@ class App(tk.Tk):
         self._del_btn.grid(row=1,column=1,sticky="ew"); self._del_btn.set_state("disabled")
 
         DarkButton(act,"🗂  Vider le dossier d'extraction",self._clear_output_dir,
-                   style="danger",width=0,height=30,anchor="center").grid(row=2,column=0,columnspan=2,sticky="ew",pady=(5,0))
+                style="danger",width=0,height=30,anchor="center").grid(row=2,column=0,columnspan=2,sticky="ew",pady=(5,0))
+        self._retry_btn=DarkButton(act,"🔁  Ré-extraire les échecs",self._retry_failed,
+                                style="default",width=0,height=30,anchor="center")
+        self._retry_btn.grid(row=3,column=0,columnspan=2,sticky="ew",pady=(5,0))
+        self._retry_btn.set_state("disabled")
 
         chk=tk.Frame(inner,bg=C["bg"]); chk.grid(row=row,column=0,sticky="w",padx=PAD,pady=(6,0)); row+=1
         tk.Checkbutton(chk,text="Demander confirmation avant suppression",
@@ -2223,7 +2228,11 @@ class App(tk.Tk):
         threading.Thread(target=self._detect_hdr_async, args=(path,), daemon=True).start()
         log.info("Vidéo chargée : %s | %s | %dx%d | %.2f fps",
                  os.path.basename(path), hms(dur), raw_w, raw_h, fps)
-        self._update_capture_plan()   # v4.14 (UX7) : rafraîchit le plan avec la nouvelle durée      
+        self._update_capture_plan()   # v4.14 (UX7) : rafraîchit le plan avec la nouvelle durée
+        # U1 : les échecs appartiennent à l'ancienne vidéo → on les oublie
+        self._failed_frames=[]; self._failed_tcs=[]
+        self._retry_btn.set_state("disabled")
+        self._retry_btn.set_text("🔁  Ré-extraire les échecs")    
 
 
     # ── HDR ───────────────────────────────────────────────────────────────────
@@ -2329,6 +2338,8 @@ class App(tk.Tk):
     # ── Extraction ────────────────────────────────────────────────────────────
     def _start_extraction(self):
         self._loading_thumbs = False
+        if self._extracting:
+             return
         if not self.v_path.get():
             messagebox.showwarning("Attention","Veuillez choisir une vidéo."); return
         if not self.v_outdir.get():
@@ -2346,11 +2357,12 @@ class App(tk.Tk):
         self._prev_info.config(text="Extraction en cours…")
         self._badge_total.config(text="0 image(s)"); self._badge_sel.config(text="")
         self._del_btn.set_state("disabled"); self._run_btn.set_state("disabled")
-        self._cancel_btn.set_state("normal"); self._cancel=False
+        self._cancel_btn.set_state("normal"); self._cancel=False; self._extracting=True
+        self._retry_btn.set_state("disabled"); self._retry_btn.set_text("🔁  Ré-extraire les échecs")
         self._extract_start=time.time()   # v4.10 (UX3) : départ du calcul d'ETA
         # v4.1 : état du flush ordonné (les workers terminent dans le désordre)
         self._next_flush=0; self._flushed=0; self._flush_tot=len(targets)
-        self._pending_results={}; self._failed_tcs=[]     # v4.5 : échecs
+        self._pending_results={}; self._failed_tcs=[]; self._failed_frames=[]
         log.info("Extraction lancée : %d frame(s) ciblée(s) — %s",
                  len(targets), os.path.basename(self.v_path.get()))
         self._prog.set(0); self._prog_lbl.config(text="Initialisation…")
@@ -2362,6 +2374,157 @@ class App(tk.Tk):
     def _cancel_extraction(self):
         self._cancel=True; self._cancel_btn.set_state("disabled")
         self._prog_lbl.config(text="Annulation…")
+
+    # ── U1 : ré-extraction des échecs ────────────────────────────────────────
+    def _retry_failed(self):
+        """Ré-extrait uniquement les frames ayant échoué lors de la dernière extraction."""
+        if not self._failed_frames or self._extracting:
+            return
+        if not self.v_path.get() or not self.video_info:
+            self._status("⚠  Vidéo non chargée.", duration=4000); return
+        if not self.v_outdir.get() or not os.path.isdir(self.v_outdir.get()):
+            self._status("⚠  Dossier d'extraction introuvable.", duration=4000); return
+        if not self._ffmpeg_ok:
+            self._status("⚠  Ré-extraction impossible sans ffmpeg.", duration=4000); return
+        self._extracting = True
+        self._cancel = False
+        self._run_btn.set_state("disabled")
+        self._retry_btn.set_state("disabled")
+        self._cancel_btn.set_state("normal")
+        self._prog.set(0)
+        n = len(self._failed_frames)
+        self._prog_lbl.config(text=f"Ré-extraction de {n} échec(s)…")
+        threading.Thread(target=self._retry_worker,
+                         args=(self.v_path.get(), self.v_outdir.get(),
+                               list(self._failed_frames)),
+                         daemon=True).start()
+
+    def _retry_worker(self, vpath, outdir, failed):
+        """Ré-extraction séquentielle (les échecs sont rares — pas besoin de pool).
+        Même pipeline et même cascade de fallback que l'extraction normale."""
+        info = self.video_info
+        disp_w = info.get("disp_w", info["width"])
+        disp_h = info.get("disp_h", info["height"])
+        sar_applied = info.get("sar_applied", False)
+        do_filter = self.v_black_filter.get()
+        base = os.path.splitext(os.path.basename(vpath))[0]
+        hdr_info = self._hdr_info
+        is_hdr = hdr_info.get("is_hdr", False)
+        tonemap = self.v_hdr_tonemap.get()
+        if is_hdr and self._zscale_ok is None:
+            self._zscale_ok = zscale_available()
+        tot = len(failed)
+        for done, (i, t) in enumerate(failed, start=1):
+            if self._cancel:
+                break
+            tmp_fd, tmp_path = tempfile.mkstemp(suffix=".jpg", prefix="vfe_")
+            os.close(tmp_fd)
+            try: os.remove(tmp_path)
+            except Exception: pass
+            ok = False
+            last_reason = ""
+            if is_hdr:
+                if self._zscale_ok:
+                    cmd = build_ffmpeg_cmd_hdr(vpath, t, tmp_path, disp_w, disp_h,
+                                               sar_applied, hdr_info, tonemap)
+                    rc, last_reason = self._run_ffmpeg(cmd, timeout=60)
+                    ok = rc == 0 and self._tmp_ok(tmp_path)
+                if not ok and not self._cancel:
+                    cmd2 = build_ffmpeg_cmd_hdr_fallback(vpath, t, tmp_path, disp_w,
+                                                         disp_h, sar_applied)
+                    rc, r2 = self._run_ffmpeg(cmd2, timeout=60)
+                    if rc == 0 and self._tmp_ok(tmp_path): ok = True
+                    else: last_reason = r2 or last_reason
+                if not ok and not self._cancel:
+                    cmd3 = build_ffmpeg_cmd(vpath, t, tmp_path, disp_w, disp_h,
+                                            sar_applied)
+                    rc, r3 = self._run_ffmpeg(cmd3, timeout=30)
+                    if rc == 0 and self._tmp_ok(tmp_path): ok = True
+                    else: last_reason = r3 or last_reason
+            else:
+                cmd = build_ffmpeg_cmd(vpath, t, tmp_path, disp_w, disp_h,
+                                       sar_applied)
+                rc, last_reason = self._run_ffmpeg(cmd, timeout=30)
+                ok = rc == 0 and self._tmp_ok(tmp_path)
+                if not ok and not self._cancel:
+                    cmd2 = build_ffmpeg_cmd_fallback(vpath, t, tmp_path, disp_w,
+                                                     disp_h, sar_applied)
+                    rc, r2 = self._run_ffmpeg(cmd2, timeout=30)
+                    if rc == 0 and self._tmp_ok(tmp_path): ok = True
+                    else: last_reason = r2 or last_reason
+            img = None
+            fpath = ""
+            if ok:
+                try:
+                    img = Image.open(tmp_path).copy()
+                except Exception as ex:
+                    ok = False
+                    last_reason = f"décodage image : {ex}"
+            if ok and do_filter and is_black_frame(np.array(img), threshold=5):
+                ok = False
+                last_reason = "frame noire détectée (décochez le filtre pour la garder)"
+            if ok:
+                fname = f"{base}_{i+1:04d}_{tc_str(t)}.jpg"
+                fpath = os.path.join(outdir, fname)
+                try:
+                    shutil.move(tmp_path, fpath)
+                except Exception as ex:
+                    ok = False
+                    fpath = ""
+                    last_reason = f"déplacement : {ex}"
+            if not ok:
+                try: os.remove(tmp_path)
+                except Exception: pass
+            self.after(0, self._on_retry_result, i, t,
+                       "ok" if ok else "fail", img, fpath, last_reason)
+            self.after(0, self._prog.set, int(done / tot * 100))
+        self.after(0, self._retry_done)
+
+    def _on_retry_result(self, i, t, kind, img, fpath, info=""):
+        """Résultat d'une frame ré-extraite : retirée des échecs si OK,
+        et insérée à sa position chronologique dans la grille."""
+        if kind == "ok":
+            self._failed_frames = [(fi, ft) for (fi, ft) in self._failed_frames
+                                   if not (fi == i and ft == t)]
+            self._failed_tcs = [ft for (fi, ft) in self._failed_frames]
+            entry = {"img": img, "path": fpath, "tc": t}
+            pos = len(self.thumbs)
+            for idx, e in enumerate(self.thumbs):
+                if e["tc"] > t:
+                    pos = idx
+                    break
+            self.thumbs.insert(pos, entry)
+            self.thumb_by_path[fpath] = entry
+            self._badge_total.config(text=f"{len(self.thumbs)} image(s)")
+            if getattr(self, "_vg", None) is not None:
+                self._vg.refresh()
+            log.info("Ré-extraction réussie : frame %d (%s)", i + 1, hms(t))
+        else:
+            log.warning("Ré-extraction échouée : frame %d (%s) : %s",
+                        i + 1, hms(t), info or "raison inconnue")
+
+    def _retry_done(self):
+        self._extracting = False
+        self._run_btn.set_state("normal")
+        self._cancel_btn.set_state("disabled")
+        nf = len(self._failed_frames)
+        if self._cancel:
+            self._prog_lbl.config(text="Ré-extraction annulée")
+        if nf:
+            self._retry_btn.set_text(f"🔁  Ré-extraire les échecs  ({nf})")
+            self._retry_btn.set_state("normal")
+            if not self._cancel:
+                self._prog.set(100)
+                self._prog_lbl.config(text=f"⚠  Ré-extraction terminée · {nf} échec(s) restant(s)")
+                self._status("⚠  Échec(s) restant(s) :  " +
+                             "  |  ".join(hms(t) for (_, t) in self._failed_frames), duration=0)
+        else:
+            self._retry_btn.set_text("🔁  Ré-extraire les échecs")
+            self._retry_btn.set_state("disabled")
+            if not self._cancel:
+                self._prog.set(100)
+                self._prog_lbl.config(text="✔  Tous les échecs ont été récupérés")
+                self._status("✔  Ré-extraction terminée : tous les échecs récupérés.", duration=6000)
 
     def _run_ffmpeg(self, cmd, timeout):
         """v4.1 : lance ffmpeg via Popen et surveille self._cancel / le timeout.
@@ -2659,6 +2822,7 @@ class App(tk.Tk):
                 self._black_skipped(tc, self._flushed, self._flush_tot, pct)
             else:   # "fail"
                 self._failed_tcs.append(tc)
+                self._failed_frames.append((i, tc))
                 log.warning("Échec frame %d (%s) : %s", i + 1, hms(tc), inf or "raison inconnue")
 
                 if not self._cancel:
@@ -2683,6 +2847,7 @@ class App(tk.Tk):
 
     def _extract_done(self,black_tcs=None):
         self._run_btn.set_state("normal"); self._cancel_btn.set_state("disabled")
+        self._extracting=False
         n=len(self.thumbs); nb=len(black_tcs) if black_tcs else 0
         nf=len(self._failed_tcs)                       # v4.5
         log.info("Extraction terminée : %d image(s), %d noire(s) filtrée(s), %d échec(s)%s",
@@ -2694,6 +2859,8 @@ class App(tk.Tk):
         # v4.5 : les échecs sont l'info la plus importante → priorité dans la barre de statut
         if nf and not self._cancel:
             self._status(f"⚠  {nf} échec(s) d'extraction :  "+"  |  ".join(hms(t) for t in self._failed_tcs),duration=0)
+            self._retry_btn.set_text(f"🔁  Ré-extraire les échecs  ({nf})")
+            self._retry_btn.set_state("normal")
         elif nb>0:
             self._status(f"🔲  {nb} frame(s) noire(s) :  "+"  |  ".join(hms(t) for t in black_tcs),duration=0)
         elif black_tcs is not None and self.v_black_filter.get():
@@ -2931,6 +3098,8 @@ class App(tk.Tk):
         outdir=self.v_outdir.get()
         if not outdir: messagebox.showwarning("Attention","Aucun dossier cible défini."); return
         if not os.path.isdir(outdir): messagebox.showwarning("Attention","Le dossier n'existe pas."); return
+        if self._extracting:
+            self._status("⚠  Attendez la fin de l'extraction en cours.", duration=4000); return
         jpgs=[f for f in os.listdir(outdir) if f.lower().endswith((".jpg",".jpeg"))]
         if not jpgs: messagebox.showinfo("Info","Le dossier est déjà vide."); return
         # v4.4 : confirmation TOUJOURS demandée pour "Vider" (même si la case est décochée)
@@ -2944,6 +3113,8 @@ class App(tk.Tk):
                 "\n".join(f"{os.path.basename(p)} : {ex}" for p, ex in errors))
         log.info("Vider le dossier : %d fichier(s) → corbeille", len(jpgs) - len(errors))
         self.thumbs.clear(); self.thumb_by_path.clear()
+        self._failed_frames=[]; self._failed_tcs=[]
+        self._retry_btn.set_state("disabled"); self._retry_btn.set_text("🔁  Ré-extraire les échecs")
         self.sel.clear(); self.marked.clear(); self._last_click_path=None; self._upd_marked_badge(); self._clear_grid()
         self._prev_lbl.config(image=""); self._prev_ref=None
         self._prev_info.config(text="Cliquez sur une\nvignette…")
