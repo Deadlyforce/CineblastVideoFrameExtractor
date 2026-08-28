@@ -10,8 +10,8 @@
   "col_count": 5,
   "preview_size": 650,
   "window_size": "1920x1200",
-  "sash_left": 301,
-  "sash_right": 606,
+  "sash_left": 389,
+  "sash_right": 1790,
   "confirm_delete": false,
   "black_filter": true,
   "mark_key": "s",
@@ -20,5 +20,5 @@
   "last_video_dir": "C:/Users/norma/Desktop",
   "last_output_dir": "C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/Extraction Photos Temp",
   "last_work_dir": "C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/2026-08-24 Backrooms/photos",
-  "window_h": 1
+  "window_h": 1335
 }

@@ -568,6 +568,8 @@ class VirtualThumbGrid:
 
         # Cache PhotoImage : path -> ((thumb_w, thumb_h), PhotoImage)
         self._photo_cache = OrderedDict()
+        # P3 : pool de cellules canvas réutilisables [rect_id, img_id, txt_id]
+        self._pool = []
 
         # Anti-mitraillage : un seul redraw programmé à la fois
         self._scheduled = False
@@ -663,115 +665,96 @@ class VirtualThumbGrid:
 
     def _redraw(self):
         self._scheduled = False
-
         try:
             if not self.canvas.winfo_exists():
                 return
         except Exception:
             return
-
         self._update_scrollregion()
-        self.canvas.delete("vt")
-
         try:
             count = len(self.app.thumbs)
         except Exception:
             count = 0
-
         if count == 0:
             self._photo_cache.clear()
+            self._hide_pool_from(0)
             return
-
         cols, thumb_w, thumb_h, cell_w, cell_h = self._metrics()
-
         try:
             top = self.canvas.canvasy(0)
             bottom = self.canvas.canvasy(max(1, self.canvas.winfo_height()))
         except Exception:
             top, bottom = 0, 1
-
         buffer = cell_h * 2
         top = max(0, top - buffer)
         bottom += buffer
-
         first_row = max(0, int(top // cell_h))
         last_row = min(self._row_count(count, cols) - 1, int(bottom // cell_h))
-
         first_idx = first_row * cols
         last_idx = min(count - 1, (last_row + 1) * cols - 1)
-
         visible = []
-
         try:
             sel = self.app.sel
         except Exception:
             sel = set()
-
         hover = getattr(self, "_hover_path", None)
-
+        cell_i = 0
         for idx in range(first_idx, last_idx + 1):
             try:
                 entry = self.app.thumbs[idx]
             except IndexError:
                 continue
-
             path = entry.get("path", "")
             if not path:
                 continue
-
             visible.append(path)
-
+            rect, img, txt = self._get_cell(cell_i)
+            cell_i += 1
             row, col = divmod(idx, cols)
             x0 = col * cell_w
             y0 = row * cell_h
-
-            rx0 = x0 + 3
-            ry0 = y0 + 3
-            rx1 = x0 + cell_w - 3
-            ry1 = y0 + cell_h - 3
-
             if path in sel:
-                fill = C["thumb_sel"]
-                outline = C["sel_brd"]
-                width = 1
+                fill, outline = C["thumb_sel"], C["sel_brd"]
             elif path == hover:
-                fill = C["thumb_hov"]
-                outline = ""
-                width = 1
+                fill, outline = C["thumb_hov"], ""
             else:
-                fill = C["thumb_bg"]
-                outline = ""
-                width = 1
-
-            self.canvas.create_rectangle(
-                rx0, ry0, rx1, ry1,
-                fill=fill,
-                outline=outline,
-                width=width,
-                tags=("vt", f"vt::{path}", "vtbg", f"vtbg::{path}"),
-            )
-
+                fill, outline = C["thumb_bg"], ""
+            self.canvas.coords(rect, x0 + 3, y0 + 3, x0 + cell_w - 3, y0 + cell_h - 3)
+            self.canvas.itemconfigure(rect, fill=fill, outline=outline, width=1,
+                                      tags=("vt", f"vt::{path}", "vtbg", f"vtbg::{path}"))
             imgtk = self._photo_for(entry, thumb_w, thumb_h)
-            if imgtk is not None:
-                self.canvas.create_image(
-                    x0 + cell_w // 2,
-                    y0 + self._pad_y + thumb_h // 2,
-                    image=imgtk,
-                    anchor="center",
-                    tags=("vt", f"vt::{path}"),
-                )
-
-            self.canvas.create_text(
-                x0 + cell_w // 2,
-                y0 + self._pad_y + thumb_h + 4,
-                text=hms(entry.get("tc", 0)),
-                font=F_SMALL,
-                fill=C["t3"],
-                anchor="n",
-                tags=("vt", f"vt::{path}"),
-            )
-
+            self.canvas.coords(img, x0 + cell_w // 2, y0 + self._pad_y + thumb_h // 2)
+            self.canvas.itemconfigure(img,
+                                      image=imgtk if imgtk is not None else "",
+                                      tags=("vt", f"vt::{path}"))
+            self.canvas.coords(txt, x0 + cell_w // 2, y0 + self._pad_y + thumb_h + 4)
+            self.canvas.itemconfigure(txt, text=hms(entry.get("tc", 0)),
+                                      tags=("vt", f"vt::{path}"))
+        self._hide_pool_from(cell_i)
         self._prune_cache(set(visible))
+
+    def _get_cell(self, i):
+        """P3 : retourne la cellule n°i du pool, en la créant si nécessaire."""
+        if i < len(self._pool):
+            return self._pool[i]
+        rect = self.canvas.create_rectangle(-10, -10, -9, -9, fill=C["thumb_bg"],
+                                            outline="", width=1, tags="vt")
+        img = self.canvas.create_image(-10, -10, image="", anchor="center", tags="vt")
+        txt = self.canvas.create_text(-10, -10, text="", font=F_SMALL,
+                                      fill=C["t3"], anchor="n", tags="vt")
+        cell = (rect, img, txt)
+        self._pool.append(cell)
+        return cell
+
+    def _hide_pool_from(self, i):
+        """P3 : masque les cellules du pool au-delà de la i-ème (hors fenêtre)."""
+        for rect, img, txt in self._pool[i:]:
+            self.canvas.coords(rect, -10, -10, -9, -9)
+            self.canvas.itemconfigure(rect, tags="vt")
+            self.canvas.coords(img, -10, -10)
+            self.canvas.itemconfigure(img, image="", tags="vt")
+            self.canvas.coords(txt, -10, -10)
+            self.canvas.itemconfigure(txt, text="", tags="vt")
 
     def _get_check_icon(self):
         if getattr(self, "_check_icon", None) is None:
@@ -2951,7 +2934,6 @@ class App(tk.Tk):
         if hasattr(self, "_preview_cache"):
             self._preview_cache.clear()
         if getattr(self, "_vg", None) is not None:
-            self._vg.canvas.delete("vt")
             self._vg.refresh()
 
     def _clear_all_thumb_state(self):
