@@ -15,6 +15,7 @@ from tkinter.font import Font
 import cv2
 import numpy as np
 from PIL import Image, ImageTk
+from collections import OrderedDict
 # ── Modules extraits (refactor A1) ──────────────────────────────────────────
 from vfe_config import (CONFIG_FILE, AppConfig, DEFAULT_CONFIG,
                         load_config, save_config, _coerce_config)
@@ -563,12 +564,14 @@ class VirtualThumbGrid:
     """v4.7 (chantier 8) : renderer virtualisé.
     Dessine uniquement la fenêtre visible et gère un cache PhotoImage borné."""
 
+    _MAX_CACHE = 200   # P2 : nombre max de vignettes PhotoImage conservées (LRU)
+
     def __init__(self, canvas, app):
         self.canvas = canvas
         self.app = app
 
         # Cache PhotoImage : path -> ((thumb_w, thumb_h), PhotoImage)
-        self._photo_cache = {}
+        self._photo_cache = OrderedDict()
 
         # Anti-mitraillage : un seul redraw programmé à la fois
         self._scheduled = False
@@ -789,6 +792,7 @@ class VirtualThumbGrid:
 
         cached = self._photo_cache.get(path)
         if cached is not None and cached[0] == key:
+            self._photo_cache.move_to_end(path)   # P2 : marque comme récemment utilisée
             return cached[1]
 
         img = entry.get("img")
@@ -818,12 +822,14 @@ class VirtualThumbGrid:
             return None
 
         self._photo_cache[path] = (key, imgtk)
+        self._photo_cache.move_to_end(path)       # P2 : nouvelle entrée → plus récente
         return imgtk
 
     def _prune_cache(self, visible_paths):
-        for path in list(self._photo_cache.keys()):
-            if path not in visible_paths:
-                self._photo_cache.pop(path, None)
+        # P2 : ne jette plus systématiquement ce qui est hors écran.
+        # LRU simple : on conserve au plus _MAX_CACHE entrées, les plus récentes d'abord.
+        while len(self._photo_cache) > self._MAX_CACHE:
+            self._photo_cache.popitem(last=False)   # éjecte la plus ancienne
 
     def update_selection(self):
         if getattr(self, "_sel_scheduled", False):
@@ -3532,7 +3538,7 @@ class App(tk.Tk):
         sz = self.v_tsize.get()
         for i in range(start_idx, end_idx):
             entry = self.thumbs[i]
-            if entry["img"] is None:
+            if entry["img"] is None and not GRID_VIRTUAL:
                 try:
                     im = Image.open(entry["path"])
                     im.draft("RGB", (sz, sz))   # décodage JPEG allégé, échelle 1/2·1/4·1/8
