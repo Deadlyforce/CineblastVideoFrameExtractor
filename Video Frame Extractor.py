@@ -1937,7 +1937,6 @@ class App(tk.Tk):
             return
         cols = self.v_cols.get()
         total = len(self.thumbs)
-        order = [e["path"] for e in self.thumbs]
         # Déterminer la position de départ
         if len(self.sel) == 1:
             current = self._position_of(next(iter(self.sel)))
@@ -1957,7 +1956,7 @@ class App(tk.Tk):
         new = max(0, min(new, total - 1))
         if new == current:
             return
-        new_path = order[new]
+        new_path = self.thumbs[new]["path"]
         self._clear_selection()
         self.sel.add(new_path)
         self._set_sel(new_path, True)
@@ -2478,6 +2477,7 @@ class App(tk.Tk):
                     break
             self.thumbs.insert(pos, entry)
             self.thumb_by_path[fpath] = entry
+            self._reindex()
             self._badge_total.config(text=f"{len(self.thumbs)} image(s)")
             if getattr(self, "_vg", None) is not None:
                 self._vg.refresh()
@@ -2816,7 +2816,7 @@ class App(tk.Tk):
             self._next_flush += 1
 
     def _frame_done(self,img,fpath,t,done,tot,pct):
-        entry={"img":img,"path":fpath,"tc":t}
+        entry={"img":img,"path":fpath,"tc":t,"_pos":len(self.thumbs)}
         self.thumbs.append(entry)
         self.thumb_by_path[fpath]=entry            # v4
         pos=len(self.thumbs)-1
@@ -2967,14 +2967,17 @@ class App(tk.Tk):
         self._last_click_path = None
 
     def _position_of(self, path):
-        """Position d'affichage d'un chemin dans self.thumbs, ou -1 si absent."""
+        """Position d'affichage d'un chemin dans self.thumbs, ou -1 si absent.
+        P5 : O(1) — l'index est stocké dans l'entry et maintenu par _reindex()."""
         entry = self.thumb_by_path.get(path)
         if entry is None:
             return -1
-        try:
-            return self.thumbs.index(entry)
-        except ValueError:
-            return -1
+        return entry.get("_pos", -1)
+
+    def _reindex(self):
+        """P5 : recalcule les positions après insertion / suppression / déplacement."""
+        for idx, entry in enumerate(self.thumbs):
+            entry["_pos"] = idx
 
     def _click(self,path):
         if path in self.sel:
@@ -3052,6 +3055,7 @@ class App(tk.Tk):
             self.thumb_by_path.pop(path, None)
         # 3) Reconstruire la liste ordonnée sans les supprimés
         self.thumbs = [e for e in self.thumbs if e["path"] not in deleted_set]
+        self._reindex()
         self.sel.clear()
         if errors:
             messagebox.showwarning("Erreurs",
@@ -3273,6 +3277,7 @@ class App(tk.Tk):
             self.marked.discard(path)
             self.thumb_by_path.pop(path, None)
         self.thumbs = [e for e in self.thumbs if e["path"] not in moved_paths]
+        self._reindex()
         self._last_click_path = None
         self._reflow_grid()
         self._prev_lbl.config(image=""); self._prev_ref = None
@@ -3377,8 +3382,8 @@ class App(tk.Tk):
 
     def _reload_done_lazy(self, entries):
         """Stocke les métadonnées sans charger les pixels, puis construit les vignettes une par une."""
-        for fpath, tc in entries:
-            entry = {"img": None, "path": fpath, "tc": tc}
+        for idx, (fpath, tc) in enumerate(entries):
+            entry = {"img": None, "path": fpath, "tc": tc, "_pos": idx}
             self.thumbs.append(entry)
             self.thumb_by_path[fpath] = entry
         self._badge_total.config(text=f"{len(self.thumbs)} image(s)")
