@@ -932,3 +932,5 @@ frame=    0 fps=0.0 q=0.0 Lsize=N/A time=N/A bitrate=N/A speed=N/A elapsed=0:00:
 2026-08-28 09:43:33  INFO     Démarrage — ffmpeg présent | corbeille (send2trash) ACTIVE
 2026-08-28 09:43:33  INFO     Vidéo chargée : Bataille au-delà des étoiles (1968) - VF - Kinji Fukusaku.mp4 | 1h 30m 09s | 1280x720 | 30.00 fps
 2026-08-28 09:43:33  INFO     Analyse couleur : SDR
+2026-08-28 10:12:37  INFO     Démarrage — ffmpeg présent | corbeille (send2trash) ACTIVE
+2026-08-28 10:13:09  INFO     Démarrage — ffmpeg présent | corbeille (send2trash) ACTIVE

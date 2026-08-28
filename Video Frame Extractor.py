@@ -1014,6 +1014,7 @@ class App(tk.Tk):
         self.minsize(LEFT_MIN_W+400,560)
         setup_style(self)
         self._geometry_ready = False
+        self._save_config_job = None   # P4 : debounce de la sauvegarde
         self._build_ui()
         self._bind_events()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -1932,7 +1933,12 @@ class App(tk.Tk):
     def _on_close(self):
         self._cfg["window_h"] = self.winfo_height()
         self._cancel = True          # v4.5 : interrompt l'extraction en cours → sortie propre
-        self._auto_save_config()
+        # P4 : flush immédiat du debounce (sinon la dernière modif est perdue)
+        if self._save_config_job is not None:
+            try: self.after_cancel(self._save_config_job)
+            except Exception: pass
+            self._save_config_job = None
+        save_config(self._collect_config())
         self.destroy()
 
     def _on_arrow_key(self, event):
@@ -2395,11 +2401,25 @@ class App(tk.Tk):
             try: proc.kill()
             except Exception: pass
             rc, reason = -1, f"erreur : {ex}"
-        # Queue du stderr (diagnostic)
+        # S2 : ne garder que les dernières lignes utiles du stderr ffmpeg.
+        # La bannière + "configuration:" noie l'info ; on prend les 8 dernières lignes
+        # non vides, en excluant les lignes de versions de libs (libav*, libsw*).
         tail = ""
         try:
             with open(err_path, "r", encoding="utf-8", errors="replace") as f:
-                tail = f.read().strip()
+                lines = f.read().splitlines()
+            # Filtrer les lignes inutiles (bannière, versions, mapping)
+            skip_prefixes = (
+                "ffmpeg version", "built with", "configuration:",
+                "libav", "libsw", "Press [q]", "Stream mapping",
+                "  Stream #", "Output #", "frame=", "speed=",
+                "Last message repeated", "Metadata:",
+            )
+            kept = [
+                ln for ln in lines
+                if ln.strip() and not any(ln.lstrip().startswith(p) for p in skip_prefixes)
+            ]
+            tail = "\n".join(kept[-8:])   # 8 dernières lignes utiles max
         except Exception:
             pass
         try: os.remove(err_path)
@@ -3025,6 +3045,18 @@ class App(tk.Tk):
         return _coerce_config(raw)
 
     def _auto_save_config(self):
+        """P4 : debounce 400 ms — une seule écriture disque après un burst de changements
+        (ex. drag du slider). Les sauvegardes explicites (_save_config_action) restent
+        immédiates et ne passent pas par ici."""
+        if self._save_config_job is not None:
+            try:
+                self.after_cancel(self._save_config_job)
+            except Exception:
+                pass
+        self._save_config_job = self.after(400, self._do_auto_save)
+
+    def _do_auto_save(self):
+        self._save_config_job = None
         save_config(self._collect_config())
 
     def _restore_marked(self):
