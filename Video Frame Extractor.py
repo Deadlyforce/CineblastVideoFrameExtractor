@@ -2533,16 +2533,18 @@ class App(tk.Tk):
                     except Exception: proc.kill()
                     rc, reason = -1, "annulé"
                     break
-                rc = proc.poll()
-                if rc is not None:
-                    break
                 if time.time() > deadline:
                     proc.terminate()
                     try: proc.wait(timeout=3)
                     except Exception: proc.kill()
                     rc, reason = -1, f"timeout après {timeout}s"
                     break
-                time.sleep(0.05)
+                # P6 : attente bloquante courte au lieu d'un busy-wait à 20 Hz
+                try:
+                    rc = proc.wait(timeout=0.2)
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
         except Exception as ex:
             try: proc.kill()
             except Exception: pass
