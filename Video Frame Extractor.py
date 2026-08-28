@@ -85,10 +85,6 @@ LEFT_MIN_W   = 300
 WINDOW_SIZES = ["auto", "1920x1200", "1920x1080", "1280x800", "1280x720"]
 FFMPEG_WORKERS = 3   # v4.1 : nb de ffmpeg en parallèle (passe à 4 si SSD + CPU récent)
 
-# v4.7 (chantier 8) : couture pour la grille virtualisée.
-# False = grille historique (1 vignette = 3 widgets).
-# True  = canvas fenêtré avec recyclage (activé seulement après validation).
-GRID_VIRTUAL = True
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Helpers
@@ -1006,11 +1002,10 @@ class App(tk.Tk):
         for _v in (self.v_confirm_del, self.v_black_filter, self.v_hdr_tonemap):
             _v.trace_add("write", lambda *a: self._auto_save_config())
 
-        self.video_info={}; self.thumbs=[]; self.thumb_refs={}      # v4 : refs PhotoImage par chemin
+        self.video_info={}; self.thumbs=[]      # v4 : refs PhotoImage par chemin
         self.thumb_by_path={}                                       # v4 : accès O(1) par chemin
-        self.thumb_wids={}; self.sel=set(); self.marked=set()       # v4 : sets de CHEMINS
+        self.sel=set(); self.marked=set()       # v4 : sets de CHEMINS
         self._cancel=False; self._prev_ref=None; self._last_click_path=None
-        self._drag_active=False; self._drag_in_zone=False; self._drag_sel_before=set()
         self._hdr_info={}          # résultat detect_hdr() pour la vidéo courante
         self._zscale_ok=None       # cache du test zscale_available()
         self._hdr_detect_done=threading.Event()   # v4.8 (point 9)
@@ -1119,23 +1114,18 @@ class App(tk.Tk):
 
         self._build_left(); self._build_center(); self._build_right()
 
-        # v4.7 (chantier 8) : branchement de la grille virtualisée.
-        if GRID_VIRTUAL:
-            self._vg = VirtualThumbGrid(self._cv, self)
-            self._vg_drag = None
-            self._center_scrollbar.command = self._vg_yview
-            self._cv.bind("<Configure>", lambda e: self._vg.refresh(), add="+")
-            self._cv.bind("<MouseWheel>", lambda e: self._vg.refresh(), add="+")
-            self._cv.bind("<Button-4>", lambda e: self._vg.refresh(), add="+")
-            self._cv.bind("<Button-5>", lambda e: self._vg.refresh(), add="+")
-            self._cv.bind("<ButtonPress-1>", self._vg_on_press, add="+")
-            self._cv.bind("<B1-Motion>", self._vg_on_drag, add="+")
-            self._cv.bind("<ButtonRelease-1>", self._vg_on_release, add="+")
-            self._cv.bind("<Motion>", self._vg_on_motion, add="+")
-            try:
-                self._cv.itemconfigure(self._gwin, state="hidden")
-            except Exception:
-                pass
+        # Grille virtualisée — seul système de rendu (refactor A2)
+        self._vg = VirtualThumbGrid(self._cv, self)
+        self._vg_drag = None
+        self._center_scrollbar.command = self._vg_yview
+        self._cv.bind("<Configure>", lambda e: self._vg.refresh(), add="+")
+        self._cv.bind("<MouseWheel>", lambda e: self._vg.refresh(), add="+")
+        self._cv.bind("<Button-4>", lambda e: self._vg.refresh(), add="+")
+        self._cv.bind("<Button-5>", lambda e: self._vg.refresh(), add="+")
+        self._cv.bind("<ButtonPress-1>", self._vg_on_press, add="+")
+        self._cv.bind("<B1-Motion>", self._vg_on_drag, add="+")
+        self._cv.bind("<ButtonRelease-1>", self._vg_on_release, add="+")
+        self._cv.bind("<Motion>", self._vg_on_motion, add="+")
 
         self._statusbar=tk.Label(self,text="",font=F_SMALL,fg=C["t3"],
                                  bg=C["panel"],anchor="w",padx=12,pady=4)
@@ -1176,13 +1166,6 @@ class App(tk.Tk):
         sc.bind("<MouseWheel>", lambda e: sc.yview_scroll(-int(e.delta / 120), "units"))
         sc.bind("<Button-4>",   lambda e: sc.yview_scroll(-1, "units"))
         sc.bind("<Button-5>",   lambda e: sc.yview_scroll(1, "units"))
-
-        # Auto-hide : apparaît au survol, disparaît après 500 ms
-        # sc.bind("<Enter>",                lambda e: self._show_scrollbar_grid(self._left_scrollbar))
-        # sc.bind("<Leave>",                lambda e: self._hide_scrollbar_grid_later(self._left_scrollbar))
-        # self._left_scrollbar.bind("<Enter>",  lambda e: self._show_scrollbar_grid(self._left_scrollbar))
-        # self._left_scrollbar.bind("<Leave>",  lambda e: self._hide_scrollbar_grid_later(self._left_scrollbar))
-
 
         self._build_left_content(inner)
 
@@ -1595,24 +1578,10 @@ class App(tk.Tk):
 
         self._cv.configure(yscrollcommand=self._center_scrollbar.set)
 
-        # self._cv.bind("<Enter>",                    lambda e: self._show_scrollbar_grid(self._center_scrollbar))
-        # self._cv.bind("<Leave>",                    lambda e: self._hide_scrollbar_grid_later(self._center_scrollbar))
-        # self._center_scrollbar.bind("<Enter>",      lambda e: self._show_scrollbar_grid(self._center_scrollbar))
-        # self._center_scrollbar.bind("<Leave>",      lambda e: self._hide_scrollbar_grid_later(self._center_scrollbar))
-
-
-        self._gf=tk.Frame(self._cv,bg=C["thumb_bg"],padx=6,pady=8)
-        self._gwin=self._cv.create_window((0,0),window=self._gf,anchor="nw")
-        self._gf.bind("<Configure>",self._on_grid_configure)
-        self._cv.bind("<Configure>",lambda e: self._cv.itemconfig(self._gwin,width=e.width))
         self._cv.bind("<MouseWheel>",self._scroll)
         self._cv.bind("<Button-4>",  self._scroll)
         self._cv.bind("<Button-5>",  self._scroll)
         self._cv.bind("<Button-1>",  lambda e: self.focus_set(),add="+")
-        for widget in (self._cv,self._gf):
-            widget.bind("<ButtonPress-1>",  self._drag_start)
-            widget.bind("<B1-Motion>",      self._drag_motion)
-            widget.bind("<ButtonRelease-1>",self._drag_end)
 
     def _vg_yview(self, *args):
         self._cv.yview(*args)
@@ -2004,35 +1973,8 @@ class App(tk.Tk):
         self._scroll_to_thumb(new_path)
 
     def _scroll_to_thumb(self, path):
-        """Fait défiler le canvas central pour que la vignette path soit visible."""
-        if GRID_VIRTUAL:
-            if getattr(self, "_vg", None) is not None:
-                self._vg.scroll_to_path(path)
-            return
-
-        if path not in self.thumb_wids:
-            return
-
-        cell = self.thumb_wids[path]["frame"]
-
-        try:
-            self._cv.update_idletasks()
-            total_h = self._cv.bbox("all")[3]
-            if not total_h:
-                return
-
-            cell_top    = cell.winfo_rooty() - self._cv.winfo_rooty() + self._cv.canvasy(0)
-            cell_bottom = cell_top + cell.winfo_height()
-            canvas_h    = self._cv.winfo_height()
-            scroll_top  = self._cv.canvasy(0)
-            scroll_bot  = scroll_top + canvas_h
-
-            if cell_top < scroll_top:
-                self._cv.yview_moveto(cell_top / total_h)
-            elif cell_bottom > scroll_bot:
-                self._cv.yview_moveto((cell_bottom - canvas_h) / total_h)
-        except Exception:
-            pass
+        if getattr(self, "_vg", None) is not None:
+            self._vg.scroll_to_path(path)
 
     def _global_click_deselect(self,event):
         """v4.6 : désélectionne si le clic est hors de toute vignette.
@@ -2390,8 +2332,8 @@ class App(tk.Tk):
         targets=self._compute_targets()
         if not targets: messagebox.showinfo("Info","Aucune frame à extraire."); return
 
-        self.thumbs.clear(); self.thumb_refs.clear(); self.thumb_by_path.clear()
-        self.thumb_wids.clear(); self.sel.clear(); self.marked.clear()
+        self.thumbs.clear(); self.thumb_by_path.clear()
+        self.sel.clear(); self.marked.clear()
         self._last_click_path=None
         self._upd_marked_badge(); self._clear_grid()
         self._prev_lbl.config(image=""); self._prev_ref=None
@@ -2739,52 +2681,8 @@ class App(tk.Tk):
 
     # ── Grille vignettes ──────────────────────────────────────────────────────
     def _add_thumb(self, path, pos):
-        if GRID_VIRTUAL:
-            if getattr(self, "_vg", None) is not None:
-                self._vg.refresh()
-            return
-
-        entry = self.thumb_by_path[path]
-        sz = self.v_tsize.get()
-        cols = self.v_cols.get()
-        th = entry["img"].copy()
-        th.thumbnail((sz, sz), Image.LANCZOS)
-        # ── Composite de l'icône si marquée ───────────────────────────────────
-        if path in self.marked:
-            if not hasattr(self, '_cached_check_pil'):
-                self._cached_check_pil = self._make_check_icon(size=22)
-            ICON_SIZE = 22
-            icon = self._cached_check_pil
-            th_rgba = th.convert("RGBA")
-            x = th_rgba.width - ICON_SIZE - 2
-            y = 2
-            th_rgba.paste(icon, (x, y), icon)
-            th = th_rgba.convert("RGB")
-        imgtk = ImageTk.PhotoImage(th)
-        self.thumb_refs[path] = imgtk              # v4 : dict par chemin
-        ri, ci = divmod(pos, cols)
-        cell = tk.Frame(self._gf, bg=C["thumb_bg"], padx=4, pady=4, cursor="hand2")
-        cell.grid(row=ri, column=ci, padx=5, pady=5)
-        lbl = tk.Label(cell, image=imgtk, bg=C["thumb_bg"], bd=0, relief="flat",
-                     cursor="hand2", highlightthickness=2,
-                     highlightbackground=C["thumb_bg"], highlightcolor=C["thumb_bg"])
-        lbl.image = imgtk
-        lbl.pack()
-        tclbl = tk.Label(cell, text=hms(entry["tc"]), font=("Segoe UI", 8),
-                         fg=C["t3"], bg=C["thumb_bg"])
-        tclbl.pack()
-        for w in (cell, lbl, tclbl):
-            w._path = path                          # v4 : identité = chemin
-        for w in (cell, lbl, tclbl):
-            w.bind("<ButtonPress-1>",    self._on_thumb_press)
-            w.bind("<Button-1>",         self._on_thumb_button1)
-            w.bind("<Control-Button-1>", self._on_thumb_ctrl_click)
-            w.bind("<Shift-Button-1>",   self._on_thumb_shift_click)
-            w.bind("<B1-Motion>",        self._on_thumb_motion)
-            w.bind("<ButtonRelease-1>",  self._on_thumb_release)
-            w.bind("<Enter>",            self._on_thumb_enter)
-            w.bind("<Leave>",            self._on_thumb_leave)
-        self.thumb_wids[path] = {"frame": cell, "label": lbl, "tc_lbl": tclbl}
+        if getattr(self, "_vg", None) is not None:
+            self._vg.refresh()
 
     # ── Redimensionnement ─────────────────────────────────────────────────────
     _fit_job=None
@@ -2862,34 +2760,18 @@ class App(tk.Tk):
 
     def _adjust_center_width(self): self._fit_window(animate=False)
 
-    def _on_grid_configure(self, e):
-        if GRID_VIRTUAL:
-            return
-
-        if getattr(self, '_loading_thumbs', False):
-            return
-        self._cv.configure(scrollregion=self._cv.bbox("all"))
-
     def _clear_grid(self):
         if hasattr(self, "_preview_cache"):
             self._preview_cache.clear()
-
-        if GRID_VIRTUAL:
-            if getattr(self, "_vg", None) is not None:
-                self._vg.canvas.delete("vt")
-                self._vg.refresh()
-            return
-
-        for w in self._gf.winfo_children(): w.destroy()
-        self.thumb_refs.clear(); self.thumb_wids.clear()
+        if getattr(self, "_vg", None) is not None:
+            self._vg.canvas.delete("vt")
+            self._vg.refresh()
 
     def _clear_all_thumb_state(self):
         """Réinitialise complètement l'état des vignettes (zéro image)."""
         self._clear_grid()
         self.thumbs.clear()
-        self.thumb_refs.clear()
         self.thumb_by_path.clear()
-        self.thumb_wids.clear()
         self.sel.clear()
         self.marked.clear()
         self._last_click_path=None
@@ -2903,71 +2785,10 @@ class App(tk.Tk):
         self._copy_btn.set_state("disabled")
 
     def _rebuild_grid(self):
-        if GRID_VIRTUAL:
-            if getattr(self, "_vg", None) is not None:
-                self._vg.refresh()
-            return
-
-        self._clear_grid()
-        self._loading_thumbs = True
-        for pos, entry in enumerate(self.thumbs):
-            self._add_thumb(entry["path"], pos)
-        self._loading_thumbs = False
-        for p in self.sel:    self._set_sel(p, True)
-        for p in self.marked: self._update_mark_overlay(p)
-        if len(self.sel)==1: self._show_preview(next(iter(self.sel)))
-        self._adjust_center_width()
-        # --- forcer le rafraîchissement du canvas ---
-        self._gf.update_idletasks()
-        self._cv.configure(scrollregion=self._cv.bbox("all"))
-        self._cv.yview_moveto(0)
+        if getattr(self, "_vg", None) is not None:
+            self._vg.refresh()
 
     # ── Sélection ─────────────────────────────────────────────────────────────
-    def _thumb_hover(self,cell,path,on):
-        try:
-            if not cell.winfo_exists() or path in self.sel: return
-            bg=C["thumb_hov"] if on else C["thumb_bg"]; cell.config(bg=bg)
-            for ch in cell.winfo_children():
-                try: ch.config(bg=bg)
-                except Exception: pass
-        except Exception: pass
-
-    def _thumb_click(self,idx): self._click(idx)
-
-    def _get_path_from_event(self, event):
-        """v4 : retourne le chemin stocké dans le widget ayant reçu l'événement."""
-        return event.widget._path
-
-    def _on_thumb_press(self, event):
-        self.focus_set()
-        self._drag_start_from_thumb(event)
-
-    def _on_thumb_button1(self, event):
-        self._click(self._get_path_from_event(event))
-
-    def _on_thumb_ctrl_click(self, event):
-        self.focus_set()
-        self._ctrl_click(self._get_path_from_event(event))
-
-    def _on_thumb_shift_click(self, event):
-        self.focus_set()
-        self._shift_click(self._get_path_from_event(event))
-
-    def _on_thumb_motion(self, event):
-        self._drag_motion_from_thumb(event)
-
-    def _on_thumb_release(self, event):
-        self._drag_end_from_thumb(event)
-
-    def _on_thumb_enter(self, event):
-        path = self._get_path_from_event(event)
-        cell = self.thumb_wids[path]["frame"]
-        self._thumb_hover(cell, path, True)
-
-    def _on_thumb_leave(self, event):
-        path = self._get_path_from_event(event)
-        cell = self.thumb_wids[path]["frame"]
-        self._thumb_hover(cell, path, False)
 
     def _clear_selection(self):
         """v4 : efface toute la sélection (les sets contiennent des chemins)."""
@@ -3028,22 +2849,9 @@ class App(tk.Tk):
             self._prev_lbl.config(image=""); self._prev_ref=None
             self._prev_info.config(text=f"Sélection multiple\n({len(self.sel)} images)\n\nAperçu désactivé.")
 
-    def _set_sel(self,path,on):
-        if GRID_VIRTUAL:
-            if getattr(self, "_vg", None) is not None:
-                self._vg.update_selection()
-            return
-
-        if path not in self.thumb_wids: return
-        w=self.thumb_wids[path]
-        bg=C["thumb_sel"] if on else C["thumb_bg"]; brd=C["sel_brd"] if on else C["thumb_bg"]
-        w["frame"].config(bg=bg)
-        w["label"].config(bg=bg,highlightthickness=2,highlightbackground=brd,highlightcolor=brd)
-        w["tc_lbl"].config(bg=bg)
-        sync=w.get("mark_sync")
-        if sync:
-            try: sync(on)
-            except Exception: pass
+    def _set_sel(self, path, on):
+        if getattr(self, "_vg", None) is not None:
+            self._vg.update_selection()
 
     def _upd_badges(self):
         n_sel = len(self.sel)
@@ -3071,11 +2879,7 @@ class App(tk.Tk):
                  f" ({len(errors)} erreur(s))" if errors else "")
         # 2) Détruire les widgets + nettoyer les structures
         for path in deleted_paths:
-            w = self.thumb_wids.pop(path, None)
-            if w:
-                w["frame"].destroy()
             self.marked.discard(path)
-            self.thumb_refs.pop(path, None)
             self.thumb_by_path.pop(path, None)
         # 3) Reconstruire la liste ordonnée sans les supprimés
         self.thumbs = [e for e in self.thumbs if e["path"] not in deleted_set]
@@ -3119,7 +2923,7 @@ class App(tk.Tk):
             messagebox.showwarning("Erreurs",
                 "\n".join(f"{os.path.basename(p)} : {ex}" for p, ex in errors))
         log.info("Vider le dossier : %d fichier(s) → corbeille", len(jpgs) - len(errors))
-        self.thumbs.clear(); self.thumb_refs.clear(); self.thumb_by_path.clear(); self.thumb_wids.clear()
+        self.thumbs.clear(); self.thumb_by_path.clear()
         self.sel.clear(); self.marked.clear(); self._last_click_path=None; self._upd_marked_badge(); self._clear_grid()
         self._prev_lbl.config(image=""); self._prev_ref=None
         self._prev_info.config(text="Cliquez sur une\nvignette…")
@@ -3127,94 +2931,7 @@ class App(tk.Tk):
         self._del_btn.set_state("disabled"); self._prog.set(0)
         self._prog_lbl.config(text=f"✔  {len(jpgs)-len(errors)} fichier(s) déplacé(s) vers la corbeille")
 
-    # ── Drag-select ───────────────────────────────────────────────────────────
-    def _drag_start(self,event):
-        if GRID_VIRTUAL:
-            self._drag_in_zone=False
-            return
-
-        self._drag_active=False; self._drag_in_zone=True; self._drag_sel_before=set(self.sel)
-        rx=event.x_root-self._cv.winfo_rootx(); ry=event.y_root-self._cv.winfo_rooty()
-        self._drag_origin_cv=(self._cv.canvasx(rx),self._cv.canvasy(ry))
-        self._drag_origin_root=(event.x_root,event.y_root); self.focus_set()
-
-    def _drag_start_from_thumb(self,event):
-        rx=event.x_root-self._cv.winfo_rootx(); ry=event.y_root-self._cv.winfo_rooty()
-        self._drag_active=False; self._drag_in_zone=True; self._drag_sel_before=set(self.sel)
-        self._drag_origin_cv=(self._cv.canvasx(rx),self._cv.canvasy(ry))
-        self._drag_origin_root=(event.x_root,event.y_root)
-
-    def _drag_motion(self,event):
-        if not self._drag_in_zone: return
-        ox_r,oy_r=self._drag_origin_root; ox_cv,oy_cv=self._drag_origin_cv
-        if not self._drag_active:
-            if abs(event.x_root-ox_r)<5 and abs(event.y_root-oy_r)<5: return
-            self._drag_active=True
-            self._clear_selection()
-        self._do_drag(event.x_root,event.y_root,ox_cv,oy_cv)
-
-    def _drag_motion_from_thumb(self,event):
-        if not self._drag_in_zone: return
-        ox_r,oy_r=self._drag_origin_root; ox_cv,oy_cv=self._drag_origin_cv
-        if not self._drag_active:
-            if abs(event.x_root-ox_r)<5 and abs(event.y_root-oy_r)<5: return
-            self._drag_active=True
-            self._clear_selection()
-        self._do_drag(event.x_root,event.y_root,ox_cv,oy_cv)
-
-    def _do_drag(self,x_root,y_root,ox_cv,oy_cv):
-        rx=x_root-self._cv.winfo_rootx(); ry=y_root-self._cv.winfo_rooty()
-        cx_cv=self._cv.canvasx(rx); cy_cv=self._cv.canvasy(ry)
-        x1,x2=min(ox_cv,cx_cv),max(ox_cv,cx_cv); y1,y2=min(oy_cv,cy_cv),max(oy_cv,cy_cv)
-        self._cv.delete("rb")
-        self._cv.create_rectangle(x1,y1,x2,y2,outline="",fill=C["accent_bg"],stipple="gray25",tags="rb")
-        self._cv.create_rectangle(x1,y1,x2,y2,outline=C["accent"],fill="",width=2,dash=(6,3),tags="rb")
-        self._cv.tag_raise("rb")
-        gx=self._gf.winfo_x(); gy=self._gf.winfo_y(); new_sel=set()
-        for path,w in self.thumb_wids.items():
-            cell=w["frame"]
-            try:
-                if not cell.winfo_exists(): continue
-                cx0=cell.winfo_x()+gx; cy0=cell.winfo_y()+gy
-                cw=cell.winfo_width(); ch=cell.winfo_height()
-                if cx0<x2 and cx0+cw>x1 and cy0<y2 and cy0+ch>y1: new_sel.add(path)
-            except Exception: pass
-        for p in new_sel-self.sel:  self.sel.add(p);    self._set_sel(p,True)
-        for p in self.sel-new_sel:  self.sel.discard(p);self._set_sel(p,False)
-        self._upd_badges()
-        if len(self.sel)>1:
-            self._prev_lbl.config(image=""); self._prev_ref=None
-            self._prev_info.config(text=f"Sélection multiple\n({len(self.sel)} images)\n\nAperçu désactivé.")
-
-    def _drag_end(self,event):
-        if GRID_VIRTUAL:
-            return
-        self._finish_drag(event)
-
-    def _drag_end_from_thumb(self,event):
-        if self._drag_active: self._finish_drag(event)
-        self._drag_in_zone=False
-
-    def _finish_drag(self,event):
-        self._cv.delete("rb"); self._drag_in_zone=False
-        if not self._drag_active: self._deselect_all_if_empty_click(event); return
-        self._drag_active=False
-        if len(self.sel)==1: self._show_preview(next(iter(self.sel)))
-        elif len(self.sel)==0: self._prev_info.config(text="Cliquez sur une\nvignette…")
-
-    def _deselect_all_if_empty_click(self,event):
-        xr,yr=event.x_root,event.y_root
-        for w in self.thumb_wids.values():
-            cell=w["frame"]
-            try:
-                if not cell.winfo_exists(): continue
-                if (cell.winfo_rootx()<=xr<=cell.winfo_rootx()+cell.winfo_width() and
-                    cell.winfo_rooty()<=yr<=cell.winfo_rooty()+cell.winfo_height()): return
-            except Exception: pass
-        if self.sel:
-            self._clear_selection(); self._upd_badges()
-            self._prev_info.config(text="Cliquez sur une\nvignette…")
-
+    
     # ── Marquage ──────────────────────────────────────────────────────────────
     def _on_mark_key(self,event):
         fw=self.focus_get()
@@ -3250,38 +2967,8 @@ class App(tk.Tk):
         return img
 
     def _update_mark_overlay(self, path):
-        """Recrée la vignette avec ou sans icône composite selon l'état marqué."""
-        if GRID_VIRTUAL:
-            if getattr(self, "_vg", None) is not None:
-                self._vg.refresh()
-            return
-
-        if path not in self.thumb_wids:
-            return
-
-        w = self.thumb_wids[path]
-        entry = self.thumb_by_path[path]
-        sz = self.v_tsize.get()
-
-        th = entry["img"].copy()
-        th.thumbnail((sz, sz), Image.LANCZOS)
-
-        if path in self.marked:
-            if not hasattr(self, '_cached_check_pil'):
-                self._cached_check_pil = self._make_check_icon(size=22)
-
-            ICON_SIZE = 22
-            icon = self._cached_check_pil
-            th_rgba = th.convert("RGBA")
-            x = th_rgba.width - ICON_SIZE - 2
-            y = 2
-            th_rgba.paste(icon, (x, y), icon)
-            th = th_rgba.convert("RGB")
-
-        imgtk = ImageTk.PhotoImage(th)
-        self.thumb_refs[path] = imgtk
-        w["label"].config(image=imgtk)
-        w["label"].image = imgtk
+        if getattr(self, "_vg", None) is not None:
+            self._vg.refresh()
 
     def _unmark_all(self):
         for p in list(self.marked): self.marked.discard(p); self._update_mark_overlay(p)
@@ -3397,11 +3084,8 @@ class App(tk.Tk):
         log.info("Déplacement : %d/%d image(s) → %s", ok, n, workdir)
         # v4 : retirer les images déplacées (identité = chemin)
         for path in moved_paths:
-            w = self.thumb_wids.pop(path, None)
-            if w: w["frame"].destroy()
             self.sel.discard(path)
             self.marked.discard(path)
-            self.thumb_refs.pop(path, None)
             self.thumb_by_path.pop(path, None)
         self.thumbs = [e for e in self.thumbs if e["path"] not in moved_paths]
         self._last_click_path = None
@@ -3480,9 +3164,7 @@ class App(tk.Tk):
             return
 
         self.thumbs.clear()
-        self.thumb_refs.clear()
         self.thumb_by_path.clear()
-        self.thumb_wids.clear()
         self.sel.clear()
         self.marked.clear()
         self._last_click_path=None
@@ -3496,19 +3178,8 @@ class App(tk.Tk):
         self._reload_done_lazy(entries)
 
     def _reflow_grid(self):
-        """Repositionne les widgets existants dans la grille sans rien recréer."""
-        if GRID_VIRTUAL:
-            if getattr(self, "_vg", None) is not None:
-                self._vg.refresh()
-            return
-
-        cols = self.v_cols.get()
-        for pos, entry in enumerate(self.thumbs):
-            w = self.thumb_wids.get(entry["path"])
-            if w:
-                ri, ci = divmod(pos, cols)
-                w["frame"].grid(row=ri, column=ci, padx=5, pady=5)
-        self._adjust_center_width()
+        if getattr(self, "_vg", None) is not None:
+            self._vg.refresh()
 
     def _refresh_folder(self):
         """Relance le chargement des images depuis le dossier d'extraction."""
@@ -3532,27 +3203,16 @@ class App(tk.Tk):
     def _build_thumbs_async(self, start_idx):
         if start_idx == 0:
             self._loading_thumbs = True
-
         BATCH_SIZE = 5
         end_idx = min(start_idx + BATCH_SIZE, len(self.thumbs))
-        sz = self.v_tsize.get()
         for i in range(start_idx, end_idx):
             entry = self.thumbs[i]
-            if entry["img"] is None and not GRID_VIRTUAL:
-                try:
-                    im = Image.open(entry["path"])
-                    im.draft("RGB", (sz, sz))   # décodage JPEG allégé, échelle 1/2·1/4·1/8
-                    entry["img"] = im.copy()
-                except Exception:
-                    continue
             self._add_thumb(entry["path"], i)
         self._prog_lbl.config(text=f"Chargement des vignettes… {end_idx} / {len(self.thumbs)}")
         if end_idx < len(self.thumbs):
             self.after(1, self._build_thumbs_async, end_idx)
         else:
             self._loading_thumbs = False
-            self._gf.update_idletasks()
-            self._cv.configure(scrollregion=self._cv.bbox("all"))
             self._prog_lbl.config(text=f"✔  {len(self.thumbs)} image(s) rechargée(s)")
             self.after(3000, lambda: self._prog_lbl.config(text=""))
             # ↓ on passe la hauteur cible explicitement
