@@ -1,5 +1,5 @@
 {
-  "video_path": "C:/Users/norma/Desktop/Bataille au-delà des étoiles (1968) - VF - Kinji Fukusaku.mp4",
+  "video_path": "C:/Users/norma/Desktop/Big Boss à Bornéo (1978) - VF - Joseph Kong.avi",
   "output_dir": "C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/Extraction Photos Temp",
   "work_dir": "C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/2026-08-24 Backrooms/photos",
   "generic_name": "Backr",
@@ -8,10 +8,10 @@
   "interval_val": 5,
   "thumb_size": 250,
   "col_count": 5,
-  "preview_size": 650,
+  "preview_size": 600,
   "window_size": "1920x1200",
   "sash_left": 301,
-  "sash_right": 1702,
+  "sash_right": 606,
   "confirm_delete": false,
   "black_filter": true,
   "mark_key": "s",
@@ -20,5 +20,5 @@
   "last_video_dir": "C:/Users/norma/Desktop",
   "last_output_dir": "C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/Extraction Photos Temp",
   "last_work_dir": "C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/2026-08-24 Backrooms/photos",
-  "window_h": 1309
+  "window_h": 1
 }

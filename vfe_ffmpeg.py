@@ -1,7 +1,10 @@
 """Construction des commandes ffmpeg / ffprobe et détection HDR —
 extraits de Video Frame Extractor.py (refactor A1). Aucune dépendance tkinter."""
 import json
+import os
 import subprocess
+import tempfile
+import time as _time
 
 # ── Détection HDR ────────────────────────────────────────────────────────────
 HDR_TRANSFERS   = {"smpte2084", "arib-std-b67", "smpte428", "bt2020-10", "bt2020-12"}
@@ -172,3 +175,78 @@ def build_ffmpeg_cmd_hdr_fallback(vpath, t_sec, out_path, disp_w, disp_h, sar_ap
         out_path
     ]
     return cmd
+
+
+# ── Exécution ffmpeg avec gestion cancel / timeout (Lot 7c) ─────────────────
+import tempfile
+import time as _time
+
+
+def run_ffmpeg(cmd, timeout, is_cancelled):
+    """Lance ffmpeg via Popen et surveille is_cancelled / le timeout.
+    is_cancelled : callable () -> bool.
+    Retourne (returncode, raison). rc=0 → succès, -1 → échec/annulation/timeout.
+    La raison est la queue filtrée du stderr de ffmpeg."""
+    err_fd, err_path = tempfile.mkstemp(suffix=".txt", prefix="vfe_err_")
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=err_fd)
+    except Exception as ex:
+        os.close(err_fd)
+        try: os.remove(err_path)
+        except Exception: pass
+        return -1, f"lancement impossible : {ex}"
+    os.close(err_fd)
+    deadline = _time.time() + timeout
+    rc, reason = -1, ""
+    try:
+        while True:
+            if is_cancelled():
+                proc.terminate()
+                try: proc.wait(timeout=3)
+                except Exception: proc.kill()
+                rc, reason = -1, "annulé"
+                break
+            if _time.time() > deadline:
+                proc.terminate()
+                try: proc.wait(timeout=3)
+                except Exception: proc.kill()
+                rc, reason = -1, f"timeout après {timeout}s"
+                break
+            try:
+                rc = proc.wait(timeout=0.2)
+                break
+            except subprocess.TimeoutExpired:
+                continue
+    except Exception as ex:
+        try: proc.kill()
+        except Exception: pass
+        rc, reason = -1, f"erreur : {ex}"
+    # Filtrage des lignes utiles du stderr
+    tail = ""
+    try:
+        with open(err_path, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()
+        skip_prefixes = (
+            "ffmpeg version", "built with", "configuration:",
+            "libav", "libsw", "Press [q]", "Stream mapping",
+            "  Stream #", "Output #", "frame=", "speed=",
+            "Last message repeated", "Metadata:",
+        )
+        kept = [
+            ln for ln in lines
+            if ln.strip() and not any(ln.lstrip().startswith(p) for p in skip_prefixes)
+        ]
+        tail = "\n".join(kept[-8:])
+    except Exception:
+        pass
+    try: os.remove(err_path)
+    except Exception: pass
+    return rc, (reason or tail)
+
+
+def tmp_ok(tmp_path):
+    """Le fichier temporaire existe et n'est pas vide."""
+    try:
+        return os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0
+    except Exception:
+        return False

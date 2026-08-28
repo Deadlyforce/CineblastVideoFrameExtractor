@@ -22,15 +22,17 @@ from vfe_config import (CONFIG_FILE, AppConfig, DEFAULT_CONFIG,
 from vfe_utils import (hms, tc_str, dir_parent_label,
                        _parse_tc_from_filename, is_black_frame)
 from vfe_ffmpeg import (ffmpeg_available, get_display_size, detect_hdr,
-                        zscale_available, build_ffmpeg_cmd,
-                        build_ffmpeg_cmd_fallback, build_ffmpeg_cmd_hdr,
-                        build_ffmpeg_cmd_hdr_fallback)
+                         zscale_available, build_ffmpeg_cmd,
+                         build_ffmpeg_cmd_fallback, build_ffmpeg_cmd_hdr,
+                         build_ffmpeg_cmd_hdr_fallback,
+                         run_ffmpeg, tmp_ok)
 from vfe_plan import compute_targets
 from vfe_widgets import (C, F_HEAD, F_TITLE, F_UI, F_BOLD, F_SMALL, F_MONO, F_SECT,
                          DarkButton, PillSelector, DarkSlider, RoundedCombo,
                          DarkEntry, DarkProgress, ModernScrollbar, HSep,
                          SectLabel, Tooltip, setup_style)
 from vfe_grid import VirtualThumbGrid
+from vfe_workers import detect_limited_range_opencv, expand_limited_range
 try:
     from send2trash import send2trash          # v4.4 : suppression vers la corbeille
     _TRASH_OK = True
@@ -124,6 +126,7 @@ class App(tk.Tk):
         self.thumb_by_path={}                                       # v4 : accès O(1) par chemin
         self.sel=set(); self.marked=set()       # v4 : sets de CHEMINS
         self._cancel=False; self._prev_ref=None; self._last_click_path=None
+        self._preview_path=None   # dernier chemin affiché dans l'aperçu (survit à _global_click_deselect)
         self._extracting=False; self._failed_frames=[]    # U1 : couples (index_plan, timecode) des échecs
         self._hdr_info={}          # résultat detect_hdr() pour la vidéo courante
         self._zscale_ok=None       # cache du test zscale_available()
@@ -195,7 +198,7 @@ class App(tk.Tk):
         sash_right   = int(self._cfg.get("sash_right",  700))
 
         center_need = col_count * (thumb_size + 22) + 26
-        right_need  = preview_size + 36
+        right_need  = preview_size + 52
 
         sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
         win_w = min(sash_left + center_need + right_need + 14, sw - 40)
@@ -1436,7 +1439,11 @@ class App(tk.Tk):
         try: self.v_psize.set(int(self._v_psize_var.get()))
         except: return
         self._fit_window(animate=True)
-        if len(self.sel)==1: self._show_preview(next(iter(self.sel)))
+        # self.sel peut être vide si le clic sur le combo a déclenché
+        # _global_click_deselect → on utilise le dernier chemin aperçu.
+        p = self._preview_path
+        if p and p in self.thumb_by_path:
+            self._show_preview(p)
 
     def _compute_targets(self):
         return compute_targets(
@@ -1465,7 +1472,7 @@ class App(tk.Tk):
         self.sel.clear(); self.marked.clear()
         self._last_click_path=None
         self._upd_marked_badge(); self._clear_grid()
-        self._prev_lbl.config(image=""); self._prev_ref=None
+        self._prev_lbl.config(image=""); self._prev_ref=None; self._preview_path=None
         self._prev_info.config(text="Extraction en cours…")
         self._badge_total.config(text="0 image(s)"); self._badge_sel.config(text="")
         self._del_btn.set_state("disabled"); self._run_btn.set_state("disabled")
@@ -1640,77 +1647,11 @@ class App(tk.Tk):
                 self._status("✔  Ré-extraction terminée : tous les échecs récupérés.", duration=6000)
 
     def _run_ffmpeg(self, cmd, timeout):
-        """v4.1 : lance ffmpeg via Popen et surveille self._cancel / le timeout.
-        v4.5 : retourne (returncode, raison) — la raison est la queue du stderr
-        de ffmpeg (capturé dans un fichier temporaire, sans risque de blocage).
-        returncode : 0 = succès, -1 = annulation / timeout / erreur de lancement."""
-        err_fd, err_path = tempfile.mkstemp(suffix=".txt", prefix="vfe_err_")
-        try:
-            proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=err_fd)
-        except Exception as ex:
-            os.close(err_fd)
-            try: os.remove(err_path)
-            except Exception: pass
-            return -1, f"lancement impossible : {ex}"
-        os.close(err_fd)          # l'enfant a sa propre copie du descripteur
-        deadline = time.time() + timeout
-        rc, reason = -1, ""
-        try:
-            while True:
-                if self._cancel:
-                    proc.terminate()
-                    try: proc.wait(timeout=3)
-                    except Exception: proc.kill()
-                    rc, reason = -1, "annulé"
-                    break
-                if time.time() > deadline:
-                    proc.terminate()
-                    try: proc.wait(timeout=3)
-                    except Exception: proc.kill()
-                    rc, reason = -1, f"timeout après {timeout}s"
-                    break
-                # P6 : attente bloquante courte au lieu d'un busy-wait à 20 Hz
-                try:
-                    rc = proc.wait(timeout=0.2)
-                    break
-                except subprocess.TimeoutExpired:
-                    continue
-        except Exception as ex:
-            try: proc.kill()
-            except Exception: pass
-            rc, reason = -1, f"erreur : {ex}"
-        # S2 : ne garder que les dernières lignes utiles du stderr ffmpeg.
-        # La bannière + "configuration:" noie l'info ; on prend les 8 dernières lignes
-        # non vides, en excluant les lignes de versions de libs (libav*, libsw*).
-        tail = ""
-        try:
-            with open(err_path, "r", encoding="utf-8", errors="replace") as f:
-                lines = f.read().splitlines()
-            # Filtrer les lignes inutiles (bannière, versions, mapping)
-            skip_prefixes = (
-                "ffmpeg version", "built with", "configuration:",
-                "libav", "libsw", "Press [q]", "Stream mapping",
-                "  Stream #", "Output #", "frame=", "speed=",
-                "Last message repeated", "Metadata:",
-            )
-            kept = [
-                ln for ln in lines
-                if ln.strip() and not any(ln.lstrip().startswith(p) for p in skip_prefixes)
-            ]
-            tail = "\n".join(kept[-8:])   # 8 dernières lignes utiles max
-        except Exception:
-            pass
-        try: os.remove(err_path)
-        except Exception: pass
-        return rc, (reason or tail)
+        return run_ffmpeg(cmd, timeout, lambda: self._cancel)
 
     @staticmethod
     def _tmp_ok(tmp_path):
-        """Le fichier temporaire existe et n'est pas vide."""
-        try:
-            return os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0
-        except Exception:
-            return False
+        return tmp_ok(tmp_path)
 
     def _worker(self,vpath,outdir,targets):
         black_tcs=[]
@@ -1866,30 +1807,12 @@ class App(tk.Tk):
             self.after(0,self._frame_done,img,fpath,t,i+1,tot,(i+1)/tot*100)
         cap.release()
 
-    def _detect_limited_range_opencv(self,vpath,cap):
-        try:
-            cmd=["ffprobe","-v","error","-select_streams","v:0",
-                 "-show_entries","stream=color_range","-of","csv=p=0",vpath]
-            r=subprocess.run(cmd,capture_output=True,text=True,timeout=10)
-            if r.returncode==0:
-                out=r.stdout.strip().lower()
-                if "tv" in out or "mpeg" in out: return True
-                if "pc" in out or "full" in out: return False
-        except Exception: pass
-        try:
-            dur=self.video_info.get("duration",0); mins=[]; maxs=[]
-            for pos in [5000,dur*500,max(0,dur*1000-5000)]:
-                cap.set(cv2.CAP_PROP_POS_MSEC,pos)
-                ret,f=cap.read()
-                if ret: mins.append(int(f.min())); maxs.append(int(f.max()))
-            if mins and min(mins)>=14 and max(maxs)<=237: return True
-        except Exception: pass
-        return False
+    def _detect_limited_range_opencv(self, vpath, cap):
+        return detect_limited_range_opencv(vpath, cap, self.video_info)
 
     @staticmethod
     def _expand_limited_range(frame):
-        f=frame.astype(np.float32)
-        return np.clip((f-16.0)*(255.0/219.0),0,255).astype(np.uint8)
+        return expand_limited_range(frame)
 
     # ── Callbacks ─────────────────────────────────────────────────────────────
     def _extract_progress_text(self, done, tot, t, extra=""):
@@ -1994,13 +1917,14 @@ class App(tk.Tk):
         sz = self.v_tsize.get()
         cols = self.v_cols.get()
         center_need = cols * (sz + 22) + 12 + 14 + 10
-        right_need = self.v_psize.get() + 36
+        right_need = self.v_psize.get() + 52
         self.update_idletasks()
-
         try:
             s0 = self._pane.sash_coord(0)[0]
         except Exception:
             s0 = LEFT_MIN_W
+        sw = self.winfo_screenwidth()
+        sh = self.winfo_screenheight()
 
         if getattr(self, '_loading_thumbs', False):
             try:
@@ -2079,6 +2003,7 @@ class App(tk.Tk):
         self._upd_marked_badge()
         self._prev_lbl.config(image="")
         self._prev_ref = None
+        self._preview_path = None
         self._prev_info.config(text="Cliquez sur une\nvignette…")
         self._badge_total.config(text="0 image(s)")
         self._badge_sel.config(text="")
@@ -2234,7 +2159,7 @@ class App(tk.Tk):
         self._failed_frames=[]; self._failed_tcs=[]
         self._retry_btn.set_state("disabled"); self._retry_btn.set_text("🔁  Ré-extraire les échecs")
         self.sel.clear(); self.marked.clear(); self._last_click_path=None; self._upd_marked_badge(); self._clear_grid()
-        self._prev_lbl.config(image=""); self._prev_ref=None
+        self._prev_lbl.config(image=""); self._prev_ref=None; self._preview_path=None
         self._prev_info.config(text="Cliquez sur une\nvignette…")
         self._badge_total.config(text="0 image(s)"); self._badge_sel.config(text="")
         self._del_btn.set_state("disabled"); self._prog.set(0)
@@ -2425,11 +2350,10 @@ class App(tk.Tk):
     def _show_preview(self,path):
         if path is None:
             return
-
         entry = self.thumb_by_path.get(path)
         if entry is None:
             return
-
+        self._preview_path = path
         sz = self.v_psize.get()
 
         if not hasattr(self, "_preview_cache"):
@@ -2549,8 +2473,7 @@ class App(tk.Tk):
         cols = self.v_cols.get()
 
         center_need = cols * (sz + 22) + 12 + 14 + 10
-        right_need = self.v_psize.get() + 36
-
+        right_need = self.v_psize.get() + 52
         self.update_idletasks()
 
         try:
