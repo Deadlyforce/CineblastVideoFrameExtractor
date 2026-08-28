@@ -952,3 +952,9 @@ frame=    0 fps=0.0 q=0.0 Lsize=N/A time=N/A bitrate=N/A speed=N/A elapsed=0:00:
 2026-08-28 13:05:06  INFO     Vider le dossier : 58 fichier(s) → corbeille
 2026-08-28 13:05:15  INFO     Extraction lancée : 95 frame(s) ciblée(s) — Bataille au-delà des étoiles (1968) - VF - Kinji Fukusaku.mp4
 2026-08-28 13:05:18  INFO     Extraction terminée : 93 image(s), 2 noire(s) filtrée(s), 0 échec(s)
+2026-08-28 14:04:57  INFO     Démarrage — ffmpeg présent | corbeille (send2trash) ACTIVE
+2026-08-28 14:04:57  INFO     Vidéo chargée : Bataille au-delà des étoiles (1968) - VF - Kinji Fukusaku.mp4 | 1h 30m 09s | 1280x720 | 30.00 fps
+2026-08-28 14:04:57  INFO     Analyse couleur : SDR
+2026-08-28 14:05:05  INFO     Vider le dossier : 93 fichier(s) → corbeille
+2026-08-28 14:05:07  INFO     Extraction lancée : 95 frame(s) ciblée(s) — Bataille au-delà des étoiles (1968) - VF - Kinji Fukusaku.mp4
+2026-08-28 14:05:10  INFO     Extraction terminée : 93 image(s), 2 noire(s) filtrée(s), 0 échec(s)

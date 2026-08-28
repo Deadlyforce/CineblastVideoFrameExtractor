@@ -2061,17 +2061,12 @@ class App(tk.Tk):
             self._tooltip_win = None
 
     def _scroll_universal(self, e):
+        # P7 : si l'événement vise directement un canvas géré, son binding
+        # propre a déjà scrollé → on s'arrête (supprime le double défilement).
+        if e.widget is self._cv or e.widget is getattr(self, "_left_canvas", None):
+            return
         # Canvas central
         wx = self._cv.winfo_rootx()
-        wy = self._cv.winfo_rooty()
-        if wx <= e.x_root <= wx + self._cv.winfo_width() and wy <= e.y_root <= wy + self._cv.winfo_height():
-            if e.num == 4:
-                self._cv.yview_scroll(-1, "units")
-            elif e.num == 5:
-                self._cv.yview_scroll(1, "units")
-            elif hasattr(e, "delta") and e.delta:
-                self._cv.yview_scroll(-int(e.delta / 120), "units")
-            return  # priorité au centre
 
         # Canvas gauche
         if hasattr(self, '_left_canvas') and self._left_canvas.winfo_exists():
