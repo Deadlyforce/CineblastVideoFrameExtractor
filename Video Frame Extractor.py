@@ -2164,14 +2164,22 @@ class App(tk.Tk):
 
     
     # ── Marquage ──────────────────────────────────────────────────────────────
+    def _toggle_mark_selection(self):
+        """D7 : bascule le marquage de la sélection courante (tout marquer / tout démarquer)."""
+        if self.sel.issubset(self.marked):
+            for p in list(self.sel):
+                self.marked.discard(p)
+                self._update_mark_overlay(p)
+        else:
+            for p in list(self.sel):
+                self.marked.add(p)
+                self._update_mark_overlay(p)
+
     def _on_mark_key(self,event):
         fw=self.focus_get()
         if isinstance(fw,(tk.Entry,DarkEntry)): return
         if not self.sel: return
-        if self.sel.issubset(self.marked):
-            for p in list(self.sel): self.marked.discard(p); self._update_mark_overlay(p)
-        else:
-            for p in self.sel: self.marked.add(p); self._update_mark_overlay(p)
+        self._toggle_mark_selection()
         self._upd_marked_badge(); self._auto_save_config()
 
     def _make_check_icon(self, size=22):
@@ -2209,14 +2217,7 @@ class App(tk.Tk):
         if not self.sel:
             self._status("⚠  Aucune image sélectionnée.")
             return
-        if self.sel.issubset(self.marked):
-            for p in list(self.sel):
-                self.marked.discard(p)
-                self._update_mark_overlay(p)
-        else:
-            for p in list(self.sel):
-                self.marked.add(p)
-                self._update_mark_overlay(p)
+        self._toggle_mark_selection()
         self._upd_marked_badge()
         self._auto_save_config()
 

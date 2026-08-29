@@ -1,10 +1,10 @@
 {
-  "video_path": "C:/Users/norma/Desktop/Shelter 2026 1080p Blu-Ray  HEVC x265 10Bit Subs KINGDOM.mkv",
+  "video_path": "C:/Users/norma/Desktop/The.Lost.Bus.2025.iTA-ENG.WEBDL.2160p.HEVC.HDR.x265-CYBER.mkv",
   "output_dir": "C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/Extraction Photos Temp",
   "work_dir": "C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/2026-08-24 Backrooms/photos",
   "generic_name": "Backr",
   "mode": "count",
-  "count_val": 50,
+  "count_val": 30,
   "interval_val": 5,
   "thumb_size": 250,
   "col_count": 5,
