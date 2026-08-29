@@ -1548,37 +1548,10 @@ class App(tk.Tk):
             os.close(tmp_fd)
             try: os.remove(tmp_path)
             except Exception: pass
-            ok = False
-            last_reason = ""
-            if is_hdr:
-                if self._zscale_ok:
-                    cmd = build_ffmpeg_cmd_hdr(vpath, t, tmp_path, disp_w, disp_h,
-                                               sar_applied, hdr_info, tonemap)
-                    rc, last_reason = self._run_ffmpeg(cmd, timeout=60)
-                    ok = rc == 0 and self._tmp_ok(tmp_path)
-                if not ok and not self._cancel:
-                    cmd2 = build_ffmpeg_cmd_hdr_fallback(vpath, t, tmp_path, disp_w,
-                                                         disp_h, sar_applied)
-                    rc, r2 = self._run_ffmpeg(cmd2, timeout=60)
-                    if rc == 0 and self._tmp_ok(tmp_path): ok = True
-                    else: last_reason = r2 or last_reason
-                if not ok and not self._cancel:
-                    cmd3 = build_ffmpeg_cmd(vpath, t, tmp_path, disp_w, disp_h,
-                                            sar_applied)
-                    rc, r3 = self._run_ffmpeg(cmd3, timeout=30)
-                    if rc == 0 and self._tmp_ok(tmp_path): ok = True
-                    else: last_reason = r3 or last_reason
-            else:
-                cmd = build_ffmpeg_cmd(vpath, t, tmp_path, disp_w, disp_h,
-                                       sar_applied)
-                rc, last_reason = self._run_ffmpeg(cmd, timeout=30)
-                ok = rc == 0 and self._tmp_ok(tmp_path)
-                if not ok and not self._cancel:
-                    cmd2 = build_ffmpeg_cmd_fallback(vpath, t, tmp_path, disp_w,
-                                                     disp_h, sar_applied)
-                    rc, r2 = self._run_ffmpeg(cmd2, timeout=30)
-                    if rc == 0 and self._tmp_ok(tmp_path): ok = True
-                    else: last_reason = r2 or last_reason
+            # D2 : cascade d'extraction factorisée (méthode _run_extraction_cascade)
+            ok, last_reason, _rc = self._run_extraction_cascade(
+                vpath, t, tmp_path, disp_w, disp_h, sar_applied,
+                is_hdr, hdr_info, tonemap)
             img = None
             fpath = ""
             if ok:
@@ -1661,6 +1634,46 @@ class App(tk.Tk):
     def _tmp_ok(tmp_path):
         return tmp_ok(tmp_path)
 
+    def _run_extraction_cascade(self, vpath, t, tmp_path, disp_w, disp_h,
+                                sar_applied, is_hdr, hdr_info, tonemap):
+        """D2 : cascade d'extraction unique pour une frame, utilisée à la fois par
+        l'extraction normale (task() de _worker_ffmpeg) et la ré-extraction des
+        échecs (_retry_worker). Retourne (ok, last_reason, last_rc).
+        ok      : True si une des étapes a produit un fichier valide.
+        last_rc : returncode de la dernière commande tentée.
+        Lit self._cancel et self._zscale_ok. Thread-safe (aucun accès Tk)."""
+        ok = False
+        last_reason = ""
+        rc = -1
+        if is_hdr:
+            if self._zscale_ok:
+                cmd = build_ffmpeg_cmd_hdr(vpath, t, tmp_path, disp_w, disp_h,
+                                           sar_applied, hdr_info, tonemap)
+                rc, last_reason = self._run_ffmpeg(cmd, timeout=60)
+                ok = rc == 0 and self._tmp_ok(tmp_path)
+            if not ok and not self._cancel:
+                cmd2 = build_ffmpeg_cmd_hdr_fallback(vpath, t, tmp_path, disp_w,
+                                                     disp_h, sar_applied)
+                rc, r2 = self._run_ffmpeg(cmd2, timeout=60)
+                if rc == 0 and self._tmp_ok(tmp_path): ok = True
+                else: last_reason = r2 or last_reason
+            if not ok and not self._cancel:
+                cmd3 = build_ffmpeg_cmd(vpath, t, tmp_path, disp_w, disp_h, sar_applied)
+                rc, r3 = self._run_ffmpeg(cmd3, timeout=30)
+                if rc == 0 and self._tmp_ok(tmp_path): ok = True
+                else: last_reason = r3 or last_reason
+        else:
+            cmd = build_ffmpeg_cmd(vpath, t, tmp_path, disp_w, disp_h, sar_applied)
+            rc, last_reason = self._run_ffmpeg(cmd, timeout=30)
+            ok = rc == 0 and self._tmp_ok(tmp_path)
+            if not ok and not self._cancel:
+                cmd2 = build_ffmpeg_cmd_fallback(vpath, t, tmp_path, disp_w,
+                                                 disp_h, sar_applied)
+                rc, r2 = self._run_ffmpeg(cmd2, timeout=30)
+                if rc == 0 and self._tmp_ok(tmp_path): ok = True
+                else: last_reason = r2 or last_reason
+        return ok, last_reason, rc
+
     def _worker(self,vpath,outdir,targets,do_filter,tonemap):
         black_tcs=[]
         if self._ffmpeg_ok:
@@ -1707,34 +1720,10 @@ class App(tk.Tk):
             os.close(tmp_fd)
             try: os.remove(tmp_path)
             except Exception: pass
-            ok=False; last_reason=""; rc=-1
-            if is_hdr:
-                # ── Pipeline HDR→SDR (cascade de fallback) ─────────────────
-                if self._zscale_ok:
-                    cmd=build_ffmpeg_cmd_hdr(vpath,t,tmp_path,disp_w,disp_h,
-                                             sar_applied,hdr_info,tonemap)
-                    rc,last_reason = self._run_ffmpeg(cmd, timeout=60)
-                    ok = rc == 0 and self._tmp_ok(tmp_path)
-                if not ok and not self._cancel:
-                    cmd2=build_ffmpeg_cmd_hdr_fallback(vpath,t,tmp_path,disp_w,disp_h,sar_applied)
-                    rc,r2 = self._run_ffmpeg(cmd2, timeout=60)
-                    if rc == 0 and self._tmp_ok(tmp_path): ok=True
-                    else: last_reason = r2 or last_reason
-                if not ok and not self._cancel:
-                    cmd3=build_ffmpeg_cmd(vpath,t,tmp_path,disp_w,disp_h,sar_applied)
-                    rc,r3 = self._run_ffmpeg(cmd3, timeout=30)
-                    if rc == 0 and self._tmp_ok(tmp_path): ok=True
-                    else: last_reason = r3 or last_reason
-            else:
-                # ── Pipeline SDR standard ──────────────────────────────────
-                cmd=build_ffmpeg_cmd(vpath,t,tmp_path,disp_w,disp_h,sar_applied)
-                rc,last_reason = self._run_ffmpeg(cmd, timeout=30)
-                ok = rc == 0 and self._tmp_ok(tmp_path)
-                if not ok and not self._cancel:
-                    cmd2=build_ffmpeg_cmd_fallback(vpath,t,tmp_path,disp_w,disp_h,sar_applied)
-                    rc,r2 = self._run_ffmpeg(cmd2, timeout=30)
-                    if rc == 0 and self._tmp_ok(tmp_path): ok=True
-                    else: last_reason = r2 or last_reason
+            # D2 : cascade d'extraction factorisée (méthode _run_extraction_cascade)
+            ok, last_reason, rc = self._run_extraction_cascade(
+                vpath, t, tmp_path, disp_w, disp_h, sar_applied,
+                is_hdr, hdr_info, tonemap)
             if not ok:
                 try: os.remove(tmp_path)
                 except Exception: pass
