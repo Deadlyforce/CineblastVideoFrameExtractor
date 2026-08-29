@@ -2202,7 +2202,9 @@ class App(tk.Tk):
             "last_video_dir":  self._cfg.get("last_video_dir", ""),
             "last_output_dir": self._cfg.get("last_output_dir", ""),
             "last_work_dir":   self._cfg.get("last_work_dir", ""),
-            "marked_files":    sorted(self.marked),
+            # S4 : noms de fichier uniquement → les marques survivent à un
+            # changement de dossier d'extraction.
+            "marked_files":    sorted(os.path.basename(p) for p in self.marked),
             "window_h":        self.winfo_height(),
         }
         return _coerce_config(raw)
@@ -2223,16 +2225,17 @@ class App(tk.Tk):
         save_config(self._collect_config())
 
     def _restore_marked(self):
-        saved = set(self._cfg.get("marked_files", []))
+        # S4 : les marques sont persistées en noms de fichier. os.path.basename()
+        # sur les valeurs sauvegardées assure la rétro-compatibilité avec les
+        # anciennes configs qui contenaient des chemins absolus.
+        saved = set(os.path.basename(p) for p in self._cfg.get("marked_files", []))
         if not saved:
             return
-
         for entry in self.thumbs:
             p = entry["path"]
-            if p in saved:
+            if os.path.basename(p) in saved:
                 self.marked.add(p)
                 self._update_mark_overlay(p)
-
         self._upd_marked_badge()
 
     # ── Déplacement vers dossier de travail ───────────────────────────────────
