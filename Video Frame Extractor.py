@@ -1904,8 +1904,10 @@ class App(tk.Tk):
 
     # ── Redimensionnement ─────────────────────────────────────────────────────
     _fit_job=None
-
-    def _fit_window(self, animate=True):
+    def _fit_window(self, animate=True, target_h=None):
+        """D6 : redimensionne la fenêtre pour ajuster aux vignettes + aperçu.
+        target_h=None  → conserve la hauteur courante (comportement historique).
+        target_h=<int> → impose une hauteur cible, bornée à [560, écran-40]."""
         SASH_W = 5
         sz = self.v_tsize.get()
         cols = self.v_cols.get()
@@ -1916,9 +1918,6 @@ class App(tk.Tk):
             s0 = self._pane.sash_coord(0)[0]
         except Exception:
             s0 = LEFT_MIN_W
-        sw = self.winfo_screenwidth()
-        sh = self.winfo_screenheight()
-
         if getattr(self, '_loading_thumbs', False):
             try:
                 self._pane.paneconfig(self._cf, minsize=center_need)
@@ -1926,19 +1925,22 @@ class App(tk.Tk):
             except Exception:
                 pass
             return
-
         sw = self.winfo_screenwidth()
+        sh = self.winfo_screenheight()
         win_target = min(max(s0 + center_need + right_need + SASH_W * 2 + 4,
                             LEFT_MIN_W + 300), sw - 40)
-        # ↓ toujours conserver la hauteur actuelle de la fenêtre
-        current_h = self.winfo_height()
+        # Hauteur : courante par défaut, ou cible imposée (bornée)
+        if target_h is not None:
+            use_h = int(target_h)
+            use_h = max(560, use_h)
+            use_h = min(use_h, max(560, sh - 40))
+        else:
+            use_h = self.winfo_height()
         cy = self.winfo_y()
-        cx0 = self.winfo_x()   # v4.13 (UX5) : mémorise la position horizontale actuelle
+        cx0 = self.winfo_x()
         def _apply(w):
-            # v4.13 (UX5) : conserve la position au lieu de recentrer,
-            # en restant dans les limites de l'écran.
             cx = max(0, min(cx0, sw - w))
-            self.geometry(f"{w}x{current_h}+{cx}+{cy}")  # ← current_h figé au début
+            self.geometry(f"{w}x{use_h}+{cx}+{cy}")
             self.update_idletasks()
             try:
                 self._pane.paneconfig(self._cf, minsize=center_need)
@@ -1950,21 +1952,17 @@ class App(tk.Tk):
                 self._pane.sash_place(1, s1_new, 0)
             except Exception:
                 pass
-
         if not animate:
             _apply(win_target)
             return
-
         w_start = self.winfo_width()
         delta = win_target - w_start
         if abs(delta) < 4:
             _apply(win_target)
             return
-
         if self._fit_job:
             self.after_cancel(self._fit_job)
             self._fit_job = None
-
         def _step(i):
             t = i / 8
             ease = t * (2 - t)
@@ -1974,7 +1972,6 @@ class App(tk.Tk):
             else:
                 self._fit_job = None
                 _apply(win_target)
-
         _step(1)
 
     def _adjust_center_width(self): self._fit_window(animate=False)
@@ -2457,50 +2454,10 @@ class App(tk.Tk):
             self.after(3000, lambda: self._prog_lbl.config(text=""))
             # ↓ on passe la hauteur cible explicitement
             target_h = int(self._cfg.get("window_h", self.winfo_height()))
-            self.after(50, lambda: self._fit_window_with_height(target_h, animate=False))
+            self.after(50, lambda: self._fit_window(animate=False, target_h=target_h))
             self.after(80, self._restore_marked)
 
-    def _fit_window_with_height(self, target_h, animate=False):
-        """Comme _fit_window mais impose une hauteur plutôt que winfo_height()."""
-        SASH_W = 5
-        sz = self.v_tsize.get()
-        cols = self.v_cols.get()
-
-        center_need = cols * (sz + 22) + 12 + 14 + 10
-        right_need = self.v_psize.get() + 52
-        self.update_idletasks()
-
-        try:
-            s0 = self._pane.sash_coord(0)[0]
-        except Exception:
-            s0 = LEFT_MIN_W
-
-        sw = self.winfo_screenwidth()
-        sh = self.winfo_screenheight()
-
-        target_h = int(target_h)
-        target_h = max(560, target_h)
-        target_h = min(target_h, max(560, sh - 40))
-
-        win_target = min(max(s0 + center_need + right_need + SASH_W * 2 + 4,
-                             LEFT_MIN_W + 300), sw - 40)
-
-        cy = self.winfo_y()
-        cx0 = self.winfo_x()   # v4.13 (UX5) : position actuelle conservée
-        cx = max(0, min(cx0, sw - win_target))
-        self.geometry(f"{win_target}x{target_h}+{cx}+{cy}")
-        self.update_idletasks()
-
-        try:
-            self._pane.paneconfig(self._cf, minsize=center_need)
-            self._pane.paneconfig(self._rf, minsize=right_need)
-            self.update_idletasks()
-            total = self._pane.winfo_width()
-            s1_new = max(s0 + center_need, total - right_need - SASH_W)
-            self._pane.sash_place(0, s0, 0)
-            self._pane.sash_place(1, s1_new, 0)
-        except Exception:
-            pass
+    # D6 : _fit_window_with_height supprimé — remplacé par _fit_window(target_h=…)
 
     # ── Sauvegarde config ─────────────────────────────────────────────────────
     def _save_config_action(self):

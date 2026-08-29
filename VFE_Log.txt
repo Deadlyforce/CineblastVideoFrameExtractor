@@ -1041,3 +1041,8 @@ frame=    0 fps=0.0 q=0.0 Lsize=N/A time=N/A bitrate=N/A speed=N/A elapsed=0:00:
 2026-08-29 16:10:01  INFO     Vidéo chargée : Colony.2026.1080p.WEB-DL.AAC2.0.H264-7fans.mkv | 2h 02m 31s | 1920x1080 | 23.98 fps
 2026-08-29 16:10:01  INFO     Analyse couleur : SDR
 2026-08-29 16:10:21  INFO     Vider le dossier : 26 fichier(s) → corbeille
+2026-08-29 16:18:16  INFO     Démarrage — ffmpeg présent | corbeille (send2trash) ACTIVE
+2026-08-29 16:18:17  INFO     Vidéo chargée : Colony.2026.1080p.WEB-DL.AAC2.0.H264-7fans.mkv | 2h 02m 31s | 1920x1080 | 23.98 fps
+2026-08-29 16:18:17  INFO     Analyse couleur : SDR
+2026-08-29 16:18:25  INFO     Extraction lancée : 45 frame(s) ciblée(s) — Colony.2026.1080p.WEB-DL.AAC2.0.H264-7fans.mkv
+2026-08-29 16:18:28  INFO     Extraction terminée : 44 image(s), 1 noire(s) filtrée(s), 0 échec(s)
