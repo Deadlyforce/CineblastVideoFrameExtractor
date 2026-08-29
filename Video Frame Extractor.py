@@ -1486,8 +1486,13 @@ class App(tk.Tk):
                  len(targets), os.path.basename(self.v_path.get()))
         self._prog.set(0); self._prog_lbl.config(text="Initialisation…")
 
+        # A3 : capturer les Tk vars dans le thread principal — les workers
+        # ne doivent JAMAIS appeler .get() sur une variable Tkinter.
+        _do_filter = self.v_black_filter.get()
+        _tonemap   = self.v_hdr_tonemap.get()
         threading.Thread(target=self._worker,
-                         args=(self.v_path.get(),self.v_outdir.get(),targets),
+                         args=(self.v_path.get(),self.v_outdir.get(),targets,
+                               _do_filter,_tonemap),
                          daemon=True).start()
 
     def _cancel_extraction(self):
@@ -1513,23 +1518,25 @@ class App(tk.Tk):
         self._prog.set(0)
         n = len(self._failed_frames)
         self._prog_lbl.config(text=f"Ré-extraction de {n} échec(s)…")
+        # A3 : capturer les Tk vars dans le thread principal
+        _do_filter = self.v_black_filter.get()
+        _tonemap   = self.v_hdr_tonemap.get()
         threading.Thread(target=self._retry_worker,
                          args=(self.v_path.get(), self.v_outdir.get(),
-                               list(self._failed_frames)),
+                               list(self._failed_frames), _do_filter, _tonemap),
                          daemon=True).start()
 
-    def _retry_worker(self, vpath, outdir, failed):
+    def _retry_worker(self, vpath, outdir, failed, do_filter, tonemap):
         """Ré-extraction séquentielle (les échecs sont rares — pas besoin de pool).
-        Même pipeline et même cascade de fallback que l'extraction normale."""
+        Même pipeline et même cascade de fallback que l'extraction normale.
+        A3 : do_filter et tonemap capturés côté main thread."""
         info = self.video_info
         disp_w = info.get("disp_w", info["width"])
         disp_h = info.get("disp_h", info["height"])
         sar_applied = info.get("sar_applied", False)
-        do_filter = self.v_black_filter.get()
         base = os.path.splitext(os.path.basename(vpath))[0]
         hdr_info = self._hdr_info
         is_hdr = hdr_info.get("is_hdr", False)
-        tonemap = self.v_hdr_tonemap.get()
         if is_hdr and self._zscale_ok is None:
             self._zscale_ok = zscale_available()
         tot = len(failed)
@@ -1653,25 +1660,25 @@ class App(tk.Tk):
     def _tmp_ok(tmp_path):
         return tmp_ok(tmp_path)
 
-    def _worker(self,vpath,outdir,targets):
+    def _worker(self,vpath,outdir,targets,do_filter,tonemap):
         black_tcs=[]
         if self._ffmpeg_ok:
-            self._worker_ffmpeg(vpath,outdir,targets,black_tcs)
+            self._worker_ffmpeg(vpath,outdir,targets,black_tcs,do_filter,tonemap)
         else:
-            self._worker_opencv(vpath,outdir,targets,black_tcs)
+            self._worker_opencv(vpath,outdir,targets,black_tcs,do_filter)
         self.after(0,self._extract_done,black_tcs)
 
     # ══════════════════════════════════════════════════════════════════════════
     #  WORKER FFMPEG — v3.0 : pipeline HDR→SDR si HDR détecté
     # ══════════════════════════════════════════════════════════════════════════
-    def _worker_ffmpeg(self,vpath,outdir,targets,black_tcs):
+    def _worker_ffmpeg(self,vpath,outdir,targets,black_tcs,do_filter,tonemap):
         # v4.1 : le flush ordonné (thread principal) alimente cette liste
         self._flush_black_tcs = black_tcs
         info=self.video_info
         disp_w=info.get("disp_w",info["width"])
         disp_h=info.get("disp_h",info["height"])
         sar_applied=info.get("sar_applied",False)
-        do_filter=self.v_black_filter.get()
+        # A3 : do_filter et tonemap reçus en paramètres (capturés côté main thread)
         base=os.path.splitext(os.path.basename(vpath))[0]
         # v4.8 (point 9) : on est dans un thread → on peut attendre la fin de la
         # détection HDR sans figer l'UI. Supprime la race "extraction lancée avant
@@ -1685,7 +1692,7 @@ class App(tk.Tk):
                 break
         hdr_info   = self._hdr_info
         is_hdr     = hdr_info.get("is_hdr", False)
-        tonemap    = self.v_hdr_tonemap.get()
+        # A3 : tonemap déjà reçu en paramètre — plus de .get() Tk ici
         if is_hdr and self._zscale_ok is None:
             self._zscale_ok = zscale_available()
 
@@ -1772,14 +1779,14 @@ class App(tk.Tk):
                     log.exception("Worker inattendu : %s", exc)
 
     # ── Fallback OpenCV ───────────────────────────────────────────────────────
-    def _worker_opencv(self,vpath,outdir,targets,black_tcs):
+    def _worker_opencv(self,vpath,outdir,targets,black_tcs,do_filter):
         cap=cv2.VideoCapture(vpath)
         tot=len(targets)
         info=self.video_info
         disp_w=info.get("disp_w",info["width"])
         disp_h=info.get("disp_h",info["height"])
         sar_applied=info.get("sar_applied",False)
-        do_filter=self.v_black_filter.get()
+        # A3 : do_filter reçu en paramètre
         base=os.path.splitext(os.path.basename(vpath))[0]
         color_limited=self._detect_limited_range_opencv(vpath,cap)
 
