@@ -447,15 +447,9 @@ class App(tk.Tk):
         self._src_btn.bind("<Enter>", lambda e: self._show_full_tooltip(self._src_btn, self.v_path.get()), add="+")
         self._src_btn.bind("<Leave>", lambda e: self._hide_tooltip(), add="+")
 
-        # Mise à jour du texte du bouton quand v_path change
-        def update_src_btn(*args):
-            path = self.v_path.get()
-            if path and os.path.exists(path):
-                self._src_btn.set_text(os.path.basename(path))
-            else:
-                self._src_btn.set_text("Parcourir")
-        self.v_path.trace_add("write", update_src_btn)
-        update_src_btn()
+        # D8 : synchronisation texte ↔ chemin
+        self._sync_path_button(self.v_path, self._src_btn,
+                               os.path.exists, lambda p: os.path.basename(p))
 
         self._src_name_lbl = None
 
@@ -483,15 +477,9 @@ class App(tk.Tk):
         )
         self._outdir_btn.grid(row=0, column=0, sticky="ew", ipady=2)
 
-        # Mise à jour du texte du bouton en fonction de v_outdir
-        def update_outdir_btn(*args):
-            path = self.v_outdir.get()
-            if path and os.path.isdir(path):
-                self._outdir_btn.set_text(os.path.basename(path.rstrip("/\\")))
-            else:
-                self._outdir_btn.set_text("Parcourir")
-        self.v_outdir.trace_add("write", update_outdir_btn)
-        update_outdir_btn()
+        # D8 : synchronisation texte ↔ chemin
+        self._sync_path_button(self.v_outdir, self._outdir_btn,
+                               os.path.isdir, lambda p: os.path.basename(p.rstrip("/\\")))
 
         # Tooltip instantané sur le bouton (chemin complet)
         self._outdir_btn.bind("<Enter>", lambda e: self._show_full_tooltip(self._outdir_btn, self.v_outdir.get()), add="+")
@@ -520,14 +508,9 @@ class App(tk.Tk):
         )
         self._workdir_btn.grid(row=0, column=0, sticky="ew", ipady=2)
 
-        def update_workdir_btn(*args):
-            p = self.v_workdir.get()
-            if p and os.path.isdir(p):
-                self._workdir_btn.set_text(dir_parent_label(p))
-            else:
-                self._workdir_btn.set_text("Parcourir")
-        self.v_workdir.trace_add("write", update_workdir_btn)
-        update_workdir_btn()
+        # D8 : synchronisation texte ↔ chemin
+        self._sync_path_button(self.v_workdir, self._workdir_btn,
+                               os.path.isdir, lambda p: dir_parent_label(p))
 
         self._workdir_btn.bind("<Enter>", lambda e: self._show_full_tooltip(self._workdir_btn, self.v_workdir.get()), add="+")
         self._workdir_btn.bind("<Leave>", lambda e: self._hide_tooltip(), add="+")
@@ -1282,6 +1265,19 @@ class App(tk.Tk):
         self._plan_lbl.config(text=txt)
 
     # ── Fichiers ──────────────────────────────────────────────────────────────
+    def _sync_path_button(self, var, btn, validate_fn, format_fn):
+        """D8 : synchronise le texte d'un bouton avec un chemin.
+        validate_fn(path) -> bool : vérifie la validité du chemin.
+        format_fn(path)   -> str  : formate le chemin pour l'affichage."""
+        def _update(*args):
+            path = var.get()
+            if path and validate_fn(path):
+                btn.set_text(format_fn(path))
+            else:
+                btn.set_text("Parcourir")
+        var.trace_add("write", _update)
+        _update()
+
     def _pick_video(self):
         initial = self._cfg.get("last_video_dir", "")
         if not initial or not os.path.isdir(initial):
