@@ -418,11 +418,19 @@ class App(tk.Tk):
         # (grid utilisé à la place de pack pour _hdr_tonemap_frame)
 
     def _build_left_content(self, inner):
-        PAD=12; row=0
-
-        # ← REMPLACE tout l'ancien bloc canvas par ceci :
+        """M3 : orchestrateur — chaque section UI est dans sa propre méthode."""
+        PAD = 12
+        row = 0
         self._build_info_block(inner, PAD)
         row += 1
+        row = self._build_source_section(inner, PAD, row)
+        row = self._build_dirs_section(inner, PAD, row)
+        row = self._build_capture_section(inner, PAD, row)
+        row = self._build_window_section(inner, PAD, row)
+        row = self._build_actions_section(inner, PAD, row)
+
+    # ── M3 : sections du panneau gauche ────────────────────────────────────────
+    def _build_source_section(self, inner, PAD, row):
 
         # Source
         row=self._sect(inner,row,"Fichier source")
@@ -459,6 +467,9 @@ class App(tk.Tk):
                                 anchor="w",padx=10,pady=8)
         self._info_lbl.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(0,6)); row+=1
 
+        return row
+
+    def _build_dirs_section(self, inner, PAD, row):
         # Dossier d'Extraction
         row=self._sect(inner,row,"Dossier d'Extraction")
         f2=tk.Frame(inner,bg=C["bg"]); f2.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(2,6))
@@ -535,6 +546,9 @@ class App(tk.Tk):
         self._copy_btn.grid(row=row,column=0,pady=(4,4),padx=PAD,sticky="ew")
         self._copy_btn.set_state("disabled"); row+=1
 
+        return row
+
+    def _build_capture_section(self, inner, PAD, row):
         # Mode capture
         row=self._sect(inner,row,"Mode de capture")
         self._pill=PillSelector(inner,[("Nombre d'images","count"),("Intervalle (s)","interval")],
@@ -563,6 +577,9 @@ class App(tk.Tk):
         self._plan_lbl.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(4,2)); row+=1
         HSep(inner).grid(row=row,column=0,sticky="ew",padx=PAD,pady=6); row+=1
 
+        return row
+
+    def _build_window_section(self, inner, PAD, row):
         # Taille fenêtre
         row=self._sect(inner,row,"Taille de la fenêtre")
         wf=tk.Frame(inner,bg=C["bg"]); wf.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(2,10)); row+=1
@@ -578,6 +595,9 @@ class App(tk.Tk):
                 width=0,height=28,anchor="center").grid(row=0,column=1,sticky="ew",padx=(8,0))
         HSep(inner).grid(row=row,column=0,sticky="ew",padx=PAD,pady=6); row+=1
 
+        return row
+
+    def _build_actions_section(self, inner, PAD, row):
         # Actions
         row=self._sect(inner,row,"Actions")
         act=tk.Frame(inner,bg=C["bg"]); act.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(4,4)); row+=1
@@ -611,8 +631,9 @@ class App(tk.Tk):
         self._prog=DarkProgress(inner,height=4,bg=C["bg"])
         self._prog.grid(row=row,column=0,sticky="ew",padx=PAD,pady=(8,2)); row+=1
         self._prog_lbl=tk.Label(inner,text="",font=F_SMALL,fg=C["t3"],
-                                bg=C["bg"],anchor="w")
+                                 bg=C["bg"],anchor="w")
         self._prog_lbl.grid(row=row,column=0,sticky="ew",padx=PAD+2,pady=(0,14)); row+=1
+        return row
 
     def _sect(self,parent,row,text):
         SectLabel(parent,text).grid(row=row,column=0,sticky="ew",padx=14,pady=(10,3))

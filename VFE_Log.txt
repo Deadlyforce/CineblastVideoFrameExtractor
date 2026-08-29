@@ -1049,3 +1049,15 @@ frame=    0 fps=0.0 q=0.0 Lsize=N/A time=N/A bitrate=N/A speed=N/A elapsed=0:00:
 2026-08-29 16:27:47  INFO     Démarrage — ffmpeg présent | corbeille (send2trash) ACTIVE
 2026-08-29 16:27:47  INFO     Vidéo chargée : Colony.2026.1080p.WEB-DL.AAC2.0.H264-7fans.mkv | 2h 02m 31s | 1920x1080 | 23.98 fps
 2026-08-29 16:27:47  INFO     Analyse couleur : SDR
+2026-08-29 18:25:25  INFO     Démarrage — ffmpeg présent | corbeille (send2trash) ACTIVE
+2026-08-29 18:25:26  INFO     Vidéo chargée : Colony.2026.1080p.WEB-DL.AAC2.0.H264-7fans.mkv | 2h 02m 31s | 1920x1080 | 23.98 fps
+2026-08-29 18:25:26  INFO     Analyse couleur : SDR
+2026-08-29 18:29:11  INFO     Démarrage — ffmpeg présent | corbeille (send2trash) ACTIVE
+2026-08-29 18:29:11  INFO     Vidéo chargée : Colony.2026.1080p.WEB-DL.AAC2.0.H264-7fans.mkv | 2h 02m 31s | 1920x1080 | 23.98 fps
+2026-08-29 18:29:11  INFO     Analyse couleur : SDR
+2026-08-29 18:29:16  INFO     Vider le dossier : 44 fichier(s) → corbeille
+2026-08-29 18:29:21  INFO     Vidéo chargée : The.Lost.Bus.2025.iTA-ENG.WEBDL.2160p.HEVC.HDR.x265-CYBER.mkv | 2h 09m 45s | 3840x1606 | 23.98 fps
+2026-08-29 18:29:21  INFO     Analyse couleur : HDR
+2026-08-29 18:29:23  INFO     Extraction lancée : 45 frame(s) ciblée(s) — The.Lost.Bus.2025.iTA-ENG.WEBDL.2160p.HEVC.HDR.x265-CYBER.mkv
+2026-08-29 18:29:36  INFO     Extraction terminée : 42 image(s), 3 noire(s) filtrée(s), 0 échec(s)
+2026-08-29 18:30:05  INFO     Vider le dossier : 42 fichier(s) → corbeille
