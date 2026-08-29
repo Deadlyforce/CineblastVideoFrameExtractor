@@ -443,9 +443,10 @@ class App(tk.Tk):
         )
         self._src_btn.grid(row=0, column=0, sticky="ew", ipady=2)
 
-        # Liaison du tooltip — src seulement ici
-        self._src_btn.bind("<Enter>", lambda e: self._show_full_tooltip(self._src_btn, self.v_path.get()), add="+")
-        self._src_btn.bind("<Leave>", lambda e: self._hide_tooltip(), add="+")
+        # D5 : tooltip unifié (style gris centré, comme l'ancien _show_full_tooltip)
+        self._src_tooltip = Tooltip(self._src_btn, lambda: self.v_path.get(),
+                                    bg=C["panel2"], fg=C["t1"], border="",
+                                    dx=10, dy=5, padx=8, pady=8, anchor="center")
 
         # D8 : synchronisation texte ↔ chemin
         self._sync_path_button(self.v_path, self._src_btn,
@@ -481,9 +482,10 @@ class App(tk.Tk):
         self._sync_path_button(self.v_outdir, self._outdir_btn,
                                os.path.isdir, lambda p: os.path.basename(p.rstrip("/\\")))
 
-        # Tooltip instantané sur le bouton (chemin complet)
-        self._outdir_btn.bind("<Enter>", lambda e: self._show_full_tooltip(self._outdir_btn, self.v_outdir.get()), add="+")
-        self._outdir_btn.bind("<Leave>", lambda e: self._hide_tooltip(), add="+")
+        # D5 : tooltip unifié
+        self._outdir_tooltip = Tooltip(self._outdir_btn, lambda: self.v_outdir.get(),
+                                       bg=C["panel2"], fg=C["t1"], border="",
+                                       dx=10, dy=5, padx=8, pady=8, anchor="center")
 
         # On supprime l'ancien label self._outdir_name_lbl (optionnel)
         self._outdir_name_lbl = None
@@ -512,8 +514,10 @@ class App(tk.Tk):
         self._sync_path_button(self.v_workdir, self._workdir_btn,
                                os.path.isdir, lambda p: dir_parent_label(p))
 
-        self._workdir_btn.bind("<Enter>", lambda e: self._show_full_tooltip(self._workdir_btn, self.v_workdir.get()), add="+")
-        self._workdir_btn.bind("<Leave>", lambda e: self._hide_tooltip(), add="+")
+        # D5 : tooltip unifié
+        self._workdir_tooltip = Tooltip(self._workdir_btn, lambda: self.v_workdir.get(),
+                                        bg=C["panel2"], fg=C["t1"], border="",
+                                        dx=10, dy=5, padx=8, pady=8, anchor="center")
 
         self._workdir_name_lbl = None
 
@@ -1133,54 +1137,8 @@ class App(tk.Tk):
         """v4.12 (UX8) : limite la saisie du raccourci à un seul caractère."""
         return len(value_if_allowed) <= 1
 
-    def _show_full_tooltip(self, widget, text):
-        """Affiche un tooltip immédiat avec le texte complet, fond gris, coins arrondis."""
-        if not text:
-            return
-        # Supprimer l'ancien tooltip s'il existe
-        if hasattr(self, '_tooltip_win') and self._tooltip_win:
-            self._tooltip_win.destroy()
-        # Créer une fenêtre Toplevel
-        win = tk.Toplevel(widget)
-        win.wm_overrideredirect(True)   # pas de bordure de fenêtre
-        win.wm_attributes("-topmost", True)
-        # Fond gris
-        bg_color = C["panel2"]   # gris foncé
-        fg_color = C["t1"]       # texte clair
-        # Conception avec Canvas pour les coins arrondis
-        pad = 8
-        # Calculer la taille nécessaire
-        temp_label = tk.Label(win, text=text, font=F_SMALL, bg=bg_color, fg=fg_color)
-        temp_label.pack()
-        win.update_idletasks()
-        width = temp_label.winfo_reqwidth() + 2 * pad
-        height = temp_label.winfo_reqheight() + 2 * pad
-        temp_label.destroy()
-        win.geometry(f"{width}x{height}")
-        # Canvas arrondi
-        canvas = tk.Canvas(win, width=width, height=height, highlightthickness=0, bg=bg_color)
-        canvas.pack()
-        r = 8
-        # Dessiner un rectangle aux coins arrondis
-        canvas.create_rounded_rect = lambda x1,y1,x2,y2,r,**kw: canvas.create_polygon(
-            (x1+r,y1, x2-r,y1, x2,y1, x2,y1+r, x2,y2-r, x2,y2,
-            x2-r,y2, x1+r,y2, x1,y2, x1,y2-r, x1,y1+r, x1,y1),
-            smooth=True, **kw)
-        canvas.create_rounded_rect(0, 0, width, height, r, fill=bg_color, outline="")
-        # Ajouter le texte
-        canvas.create_text(width//2, height//2, text=text, font=F_SMALL,
-                        fill=fg_color, anchor="center")
-        # Positionner sous la souris (légèrement décalé)
-        x = widget.winfo_rootx() + 10
-        y = widget.winfo_rooty() + widget.winfo_height() + 5
-        win.geometry(f"+{x}+{y}")
-        self._tooltip_win = win
-
-    def _hide_tooltip(self):
-        """Détruit le tooltip."""
-        if hasattr(self, '_tooltip_win') and self._tooltip_win:
-            self._tooltip_win.destroy()
-            self._tooltip_win = None
+    # D5 : _show_full_tooltip et _hide_tooltip supprimés —
+    # remplacés par des instances Tooltip (vfe_widgets) créées dans _build_left_content.
 
     def _scroll_universal(self, e):
         # P7 : si l'événement vise directement un canvas géré, son binding

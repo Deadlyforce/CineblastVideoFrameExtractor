@@ -440,9 +440,24 @@ class SectLabel(tk.Label):
 
 
 class Tooltip:
+    """D5 : tooltip unifié. Paramètres de style pour couvrir les deux anciens systèmes :
+    - défaut (jaune) : tooltips d'aide sur les radiobuttons tonemap
+    - gris centré   : tooltips de chemin sur les boutons Parcourir"""
     DELAY = 0
-    def __init__(self, widget, text_fn):
-        self._w = widget; self._fn = text_fn; self._win = None; self._job = None
+    def __init__(self, widget, text_fn, bg="#fffae8", fg="#3a2a00",
+                 border="#c8b87a", dx=0, dy=4, padx=10, pady=6, anchor="w"):
+        self._w = widget
+        self._fn = text_fn
+        self._bg = bg
+        self._fg = fg
+        self._border = border
+        self._dx = dx
+        self._dy = dy
+        self._padx = padx
+        self._pady = pady
+        self._anchor = anchor
+        self._win = None
+        self._job = None
         widget.bind("<Enter>", self._schedule, add="+")
         widget.bind("<Leave>", self._cancel,   add="+")
         widget.bind("<Button>", self._cancel,  add="+")
@@ -457,22 +472,34 @@ class Tooltip:
     def _show(self):
         text = self._fn()
         if not text: return
-        x = self._w.winfo_rootx(); y = self._w.winfo_rooty() + self._w.winfo_height() + 4
+        x = self._w.winfo_rootx() + self._dx
+        y = self._w.winfo_rooty() + self._w.winfo_height() + self._dy
         self._win = tw = tk.Toplevel(self._w)
-        tw.wm_overrideredirect(True); tw.wm_attributes("-topmost", True)
-        PAD = 10
-        lbl = tk.Label(tw, text=text, font=F_SMALL, fg="#3a2a00", bg="#fffae8",
-                       justify="left", padx=PAD, pady=6, relief="flat", bd=0)
-        lbl.pack(); tw.update_idletasks()
-        w = tw.winfo_reqwidth(); h = tw.winfo_reqheight()
+        tw.wm_overrideredirect(True)
+        tw.wm_attributes("-topmost", True)
+        lbl = tk.Label(tw, text=text, font=F_SMALL, fg=self._fg, bg=self._bg,
+                       justify="left", padx=self._padx, pady=self._pady,
+                       relief="flat", bd=0)
+        lbl.pack()
+        tw.update_idletasks()
+        w = tw.winfo_reqwidth()
+        h = tw.winfo_reqheight()
         sw = self._w.winfo_screenwidth()
         if x + w > sw - 10: x = sw - w - 10
         tw.geometry(f"+{x}+{y}")
-        cv = tk.Canvas(tw, width=w, height=h, bg="#fffae8", highlightthickness=0)
+        cv = tk.Canvas(tw, width=w, height=h, bg=self._bg, highlightthickness=0)
         cv.place(x=0, y=0)
-        r = 8; pts = [r,0,w-r,0,w,0,w,r,w,h-r,w,h,w-r,h,r,h,0,h,0,h-r,0,r,0,0]
-        cv.create_polygon(pts, smooth=True, fill="#fffae8", outline="#c8b87a", width=1)
-        cv.create_text(PAD, h//2, text=text, font=F_SMALL, fill="#3a2a00", anchor="w", justify="left")
+        r = 8
+        pts = [r,0,w-r,0,w,0,w,r,w,h-r,w,h,w-r,h,r,h,0,h,0,h-r,0,r,0,0]
+        if self._border:
+            cv.create_polygon(pts, smooth=True, fill=self._bg, outline=self._border, width=1)
+        else:
+            cv.create_polygon(pts, smooth=True, fill=self._bg, outline="")
+        if self._anchor == "center":
+            cv.create_text(w//2, h//2, text=text, font=F_SMALL, fill=self._fg, anchor="center")
+        else:
+            cv.create_text(self._padx, h//2, text=text, font=F_SMALL,
+                           fill=self._fg, anchor="w", justify="left")
         lbl.lift()
 
 
