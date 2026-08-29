@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Video Frame Extractor  —  v4.0
-Nouveautés v4.0 : identité des images par chemin (plus d'indices) —
+Video Frame Extractor  —  v4.5
+Nouveautés v4.5 : identité des images par chemin (plus d'indices) —
                   sélection / marquage / suppression / déplacement fiabilisés.
 Dépendances : pip install opencv-python Pillow numpy send2trash
               ffmpeg requis (brew/apt/winget install ffmpeg)
@@ -41,7 +41,8 @@ except ImportError:
     _TRASH_OK = False
 
 # ── Journal (v4.5) ───────────────────────────────────────────────────────────
-LOG_FILE = "VFE_Log.txt"
+_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_FILE = os.path.join(_APP_DIR, "VFE_Log.txt")
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)-7s  %(message)s",
@@ -93,7 +94,7 @@ def trash_files(paths):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Video Frame Extractor  —  v4.0")
+        self.title("Video Frame Extractor  —  v4.5")
         self.configure(bg=C["bg"])
         self._cfg = load_config()
         self._ffmpeg_ok = ffmpeg_available()

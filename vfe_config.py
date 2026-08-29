@@ -7,7 +7,8 @@ from dataclasses import dataclass, field, asdict
 
 log = logging.getLogger("vfe")
 
-CONFIG_FILE = "VFE_Config.json"
+_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_FILE = os.path.join(_APP_DIR, "VFE_Config.json")
 
 
 @dataclass
