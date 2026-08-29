@@ -90,23 +90,31 @@ def zscale_available():
 
 
 # ── Constructeurs de commandes ───────────────────────────────────────────────
+def _assemble_cmd(vpath, ss, vf, out_path, pix_fmt=None):
+    """D1 : squelette commun des commandes ffmpeg d'extraction d'une frame.
+    ss     : timestamp de seek (secondes, float)
+    vf     : chaîne du filtre -vf
+    pix_fmt: ajouté seulement si fourni (seul le builder SDR standard l'utilise)."""
+    cmd = [
+        "ffmpeg", "-y",
+        "-ss", f"{ss:.6f}",
+        "-i", vpath,
+        "-frames:v", "1",
+        "-vf", vf,
+    ]
+    if pix_fmt:
+        cmd += ["-pix_fmt", pix_fmt]
+    cmd += ["-q:v", "2", out_path]
+    return cmd
+
+
 def build_ffmpeg_cmd(vpath, t_sec, out_path, disp_w, disp_h, sar_applied):
     """Commande SDR standard — JPEG full range correct (voir commentaires d'origine v2.9)."""
     if sar_applied:
         vf = f"scale={disp_w}:{disp_h}:out_range=full:flags=lanczos"
     else:
         vf = "scale=iw:ih:out_range=full"
-    cmd = [
-        "ffmpeg", "-y",
-        "-ss", f"{t_sec:.6f}",
-        "-i", vpath,
-        "-frames:v", "1",
-        "-vf", vf,
-        "-pix_fmt", "yuvj420p",
-        "-q:v", "2",
-        out_path
-    ]
-    return cmd
+    return _assemble_cmd(vpath, t_sec, vf, out_path, pix_fmt="yuvj420p")
 
 
 def build_ffmpeg_cmd_fallback(vpath, t_sec, out_path, disp_w, disp_h, sar_applied):
@@ -116,16 +124,7 @@ def build_ffmpeg_cmd_fallback(vpath, t_sec, out_path, disp_w, disp_h, sar_applie
         filters.append(f"scale={disp_w}:{disp_h}:flags=lanczos")
     filters.append("format=yuvj420p")
     vf = ",".join(filters)
-    cmd = [
-        "ffmpeg", "-y",
-        "-ss", f"{max(0, t_sec - 1):.6f}",
-        "-i", vpath,
-        "-frames:v", "1",
-        "-vf", vf,
-        "-q:v", "2",
-        out_path
-    ]
-    return cmd
+    return _assemble_cmd(vpath, max(0, t_sec - 1), vf, out_path)
 
 
 def build_ffmpeg_cmd_hdr(vpath, t_sec, out_path, disp_w, disp_h, sar_applied,
@@ -144,16 +143,7 @@ def build_ffmpeg_cmd_hdr(vpath, t_sec, out_path, disp_w, disp_h, sar_applied,
     filters.append("zscale=t=bt709:p=bt709:m=bt709:r=pc")
     filters.append("format=rgb24")
     vf = ",".join(filters)
-    cmd = [
-        "ffmpeg", "-y",
-        "-ss", f"{t_sec:.6f}",
-        "-i", vpath,
-        "-frames:v", "1",
-        "-vf", vf,
-        "-q:v", "2",
-        out_path
-    ]
-    return cmd
+    return _assemble_cmd(vpath, t_sec, vf, out_path)
 
 
 def build_ffmpeg_cmd_hdr_fallback(vpath, t_sec, out_path, disp_w, disp_h, sar_applied):
@@ -165,16 +155,7 @@ def build_ffmpeg_cmd_hdr_fallback(vpath, t_sec, out_path, disp_w, disp_h, sar_ap
     filters.append("scale=iw:ih:out_range=full")
     filters.append("format=yuvj420p")
     vf = ",".join(filters)
-    cmd = [
-        "ffmpeg", "-y",
-        "-ss", f"{t_sec:.6f}",
-        "-i", vpath,
-        "-frames:v", "1",
-        "-vf", vf,
-        "-q:v", "2",
-        out_path
-    ]
-    return cmd
+    return _assemble_cmd(vpath, t_sec, vf, out_path)
 
 
 # ── Exécution ffmpeg avec gestion cancel / timeout (Lot 7c) ─────────────────

@@ -995,3 +995,6 @@ frame=    0 fps=0.0 q=0.0 Lsize=N/A time=N/A bitrate=N/A speed=N/A elapsed=0:00:
 2026-08-29 13:53:27  INFO     Vider le dossier : 115 fichier(s) → corbeille
 2026-08-29 13:53:35  INFO     Extraction lancée : 50 frame(s) ciblée(s) — Big Boss à Bornéo (1978) - VF - Joseph Kong.avi
 2026-08-29 13:53:37  INFO     Extraction terminée : 50 image(s), 0 noire(s) filtrée(s), 0 échec(s)
+2026-08-29 13:56:35  INFO     Démarrage — ffmpeg présent | corbeille (send2trash) ACTIVE
+2026-08-29 13:56:35  INFO     Vidéo chargée : Big Boss à Bornéo (1978) - VF - Joseph Kong.avi | 1h 24m 22s | 672x336 | 25.00 fps
+2026-08-29 13:56:35  INFO     Analyse couleur : SDR
