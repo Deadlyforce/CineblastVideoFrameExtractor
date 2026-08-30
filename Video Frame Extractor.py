@@ -20,7 +20,7 @@ from collections import OrderedDict
 from vfe_config import (CONFIG_FILE, AppConfig, DEFAULT_CONFIG,
                         load_config, save_config, _coerce_config)
 from vfe_utils import (hms, tc_str, dir_parent_label,
-                       _parse_tc_from_filename, is_black_frame)
+                       _parse_tc_from_filename, is_black_frame, frame_filename)
 from vfe_ffmpeg import (ffmpeg_available, get_display_size, detect_hdr,
                          zscale_available, build_ffmpeg_cmd,
                          build_ffmpeg_cmd_fallback, build_ffmpeg_cmd_hdr,
@@ -161,8 +161,6 @@ class App(tk.Tk):
             # Pas d'images à charger : on libère le flag immédiatement
             self._loading_thumbs = False
 
-        self._scrollbar_hide_jobs = {}
-
     def _update_refresh_btn_state(self):
         if not hasattr(self, '_refresh_btn'):
             return
@@ -172,11 +170,6 @@ class App(tk.Tk):
 
 
     # ── Sashes ────────────────────────────────────────────────────────────────
-    def _restore_sashes(self):
-        try:
-            self._pane.sash_place(0,int(self._cfg.get("sash_left",310)),0)
-            self._pane.sash_place(1,int(self._cfg.get("sash_right",700)),0)
-        except Exception: pass
 
     def _get_sash_positions(self):
         try: return int(self._pane.sash_coord(0)[0]),int(self._pane.sash_coord(1)[0])
@@ -1540,7 +1533,7 @@ class App(tk.Tk):
                 ok = False
                 last_reason = "frame noire détectée (décochez le filtre pour la garder)"
             if ok:
-                fname = f"{base}_{i+1:04d}_{tc_str(t)}.jpg"
+                fname = frame_filename(base, i+1, t)
                 fpath = os.path.join(outdir, fname)
                 try:
                     shutil.move(tmp_path, fpath)
@@ -1724,7 +1717,7 @@ class App(tk.Tk):
                     self.after(0, self._on_worker_result, i, "black", None, "", t)
                     return
             # v4.1 : numéro = position dans le plan d'extraction
-            fname=f"{base}_{i+1:04d}_{tc_str(t)}.jpg"
+            fname=frame_filename(base, i+1, t)
             fpath=os.path.join(outdir,fname)
             try:
                 shutil.move(tmp_path,fpath)
@@ -1774,7 +1767,7 @@ class App(tk.Tk):
             img=Image.fromarray(cv2.cvtColor(frame,cv2.COLOR_BGR2RGB))
             if sar_applied and (disp_w,disp_h)!=(img.width,img.height):
                 img=img.resize((disp_w,disp_h),Image.LANCZOS)
-            fname=f"{base}_{i+1:04d}_{tc_str(t)}.jpg"   # v4.1 : numéro = position dans le plan
+            fname=frame_filename(base, i+1, t)
             fpath=os.path.join(outdir,fname)
             img.save(fpath,"JPEG",quality=95,subsampling=0)
             self.after(0,self._frame_done,img,fpath,t,i+1,tot,(i+1)/tot*100)

@@ -1061,3 +1061,23 @@ frame=    0 fps=0.0 q=0.0 Lsize=N/A time=N/A bitrate=N/A speed=N/A elapsed=0:00:
 2026-08-29 18:29:23  INFO     Extraction lancée : 45 frame(s) ciblée(s) — The.Lost.Bus.2025.iTA-ENG.WEBDL.2160p.HEVC.HDR.x265-CYBER.mkv
 2026-08-29 18:29:36  INFO     Extraction terminée : 42 image(s), 3 noire(s) filtrée(s), 0 échec(s)
 2026-08-29 18:30:05  INFO     Vider le dossier : 42 fichier(s) → corbeille
+2026-08-30 09:38:29  INFO     Démarrage — ffmpeg présent | corbeille (send2trash) ACTIVE
+2026-08-30 09:38:30  INFO     Vidéo chargée : The.Lost.Bus.2025.iTA-ENG.WEBDL.2160p.HEVC.HDR.x265-CYBER.mkv | 2h 09m 45s | 3840x1606 | 23.98 fps
+2026-08-30 09:38:30  INFO     Analyse couleur : HDR
+2026-08-30 09:38:44  INFO     Extraction lancée : 15 frame(s) ciblée(s) — The.Lost.Bus.2025.iTA-ENG.WEBDL.2160p.HEVC.HDR.x265-CYBER.mkv
+2026-08-30 09:38:48  INFO     Extraction terminée : 13 image(s), 2 noire(s) filtrée(s), 0 échec(s)
+2026-08-30 09:38:56  INFO     Vider le dossier : 13 fichier(s) → corbeille
+2026-08-30 10:35:40  INFO     Démarrage — ffmpeg présent | corbeille (send2trash) ACTIVE
+2026-08-30 10:35:41  INFO     Vidéo chargée : The.Lost.Bus.2025.iTA-ENG.WEBDL.2160p.HEVC.HDR.x265-CYBER.mkv | 2h 09m 45s | 3840x1606 | 23.98 fps
+2026-08-30 10:35:41  INFO     Analyse couleur : HDR
+2026-08-30 10:35:58  INFO     Extraction lancée : 15 frame(s) ciblée(s) — The.Lost.Bus.2025.iTA-ENG.WEBDL.2160p.HEVC.HDR.x265-CYBER.mkv
+2026-08-30 10:36:02  INFO     Extraction terminée : 13 image(s), 2 noire(s) filtrée(s), 0 échec(s)
+2026-08-30 10:43:49  INFO     Démarrage — ffmpeg présent | corbeille (send2trash) ACTIVE
+2026-08-30 10:43:49  INFO     Vidéo chargée : The.Lost.Bus.2025.iTA-ENG.WEBDL.2160p.HEVC.HDR.x265-CYBER.mkv | 2h 09m 45s | 3840x1606 | 23.98 fps
+2026-08-30 10:43:49  INFO     Analyse couleur : HDR
+2026-08-30 10:43:53  INFO     Vider le dossier : 13 fichier(s) → corbeille
+2026-08-30 10:43:57  INFO     Extraction lancée : 15 frame(s) ciblée(s) — The.Lost.Bus.2025.iTA-ENG.WEBDL.2160p.HEVC.HDR.x265-CYBER.mkv
+2026-08-30 10:44:01  INFO     Extraction terminée : 13 image(s), 2 noire(s) filtrée(s), 0 échec(s)
+2026-08-30 10:44:04  INFO     Suppression : 4 image(s) → corbeille
+2026-08-30 10:44:05  INFO     Suppression : 1 image(s) → corbeille
+2026-08-30 10:44:16  INFO     Vider le dossier : 8 fichier(s) → corbeille

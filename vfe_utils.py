@@ -38,6 +38,12 @@ def _parse_tc_from_filename(fname):
     return 0
 
 
+def frame_filename(base, num, t_sec):
+    """M6 : format de nommage unique des frames extraites.
+    num : numéro 1-based affiché dans le nom de fichier."""
+    return f"{base}_{num:04d}_{tc_str(t_sec)}.jpg"
+
+
 def is_black_frame(arr_rgb, threshold=5):
     """Détecte une frame noire depuis un array RGB numpy."""
     sample = arr_rgb[::8, ::8]
