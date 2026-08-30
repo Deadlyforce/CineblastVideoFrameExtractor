@@ -138,7 +138,7 @@ def build_ffmpeg_cmd_hdr(vpath, t_sec, out_path, disp_w, disp_h, sar_applied,
     filters = []
     if sar_applied:
         filters.append(f"scale={disp_w}:{disp_h}:flags=lanczos")
-    filters.append("zscale=t=linear:npl=100:p=bt709:m=bt709:r=tv")
+    filters.append(f"zscale=t=linear:npl=100:p=bt709:m=bt709:r=tv:tin={zscale_tin}")
     filters.append(f"tonemap=tonemap={tonemap_algo}:desat=0:peak=0")
     filters.append("zscale=t=bt709:p=bt709:m=bt709:r=pc")
     filters.append("format=rgb24")
