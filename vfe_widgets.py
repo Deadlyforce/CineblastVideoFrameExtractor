@@ -218,42 +218,186 @@ class PillSelector(tk.Frame):
 
 
 class DarkSlider(tk.Frame):
+    """U12-A : slider 100 % Canvas — track arrondie 4 px + thumb circulaire 16 px.
+    Interface identique à l'ancien tk.Scale : variable, command, set_state, set_info."""
+    _TRACK_H  = 4
+    _THUMB_R  = 8
+    _PAD_X    = 10
+    _CANVAS_H = 24
+
     def __init__(self, parent, from_, to, resolution, variable,
                  label="", unit="", command=None, **kw):
         kw.setdefault("bg", parent.cget("bg"))
         super().__init__(parent, **kw)
-        self.columnconfigure(0, weight=1); self._cmd = command; self._unit = unit
-        top = tk.Frame(self, bg=self.cget("bg")); top.grid(row=0, column=0, sticky="ew")
+        self.columnconfigure(0, weight=1)
+        self._cmd        = command
+        self._unit       = unit
+        self._from       = from_
+        self._to         = to
+        self._resolution = resolution
+        self._var        = variable
+        self._disabled   = False
+        self._hover      = False
+        self._dragging   = False
+        self._updating   = False
+
+        # ── Ligne haute : label + valeur ──
+        top = tk.Frame(self, bg=self.cget("bg"))
+        top.grid(row=0, column=0, sticky="ew")
         top.columnconfigure(1, weight=1)
         tk.Label(top, text=label, font=F_SMALL, fg=C["t2"],
                  bg=self.cget("bg"), anchor="w").grid(row=0, column=0, sticky="w")
         self._val_lbl = tk.Label(top, text="", font=F_BOLD, fg=C["accent"],
                                  bg=self.cget("bg"), anchor="e")
         self._val_lbl.grid(row=0, column=1, sticky="e")
-        self._scale = tk.Scale(self, from_=from_, to=to, resolution=resolution,
-                               orient="horizontal", variable=variable,
-                               bg=C["bg"], fg=C["t1"], troughcolor=C["input"],
-                               activebackground=C["accent"], highlightthickness=0,
-                               showvalue=False, sliderrelief="flat", sliderlength=14,
-                               command=self._on_change)
-        self._scale.grid(row=1, column=0, sticky="ew", pady=(1, 0))
+
+        # ── Canvas slider ──
+        self._canvas = tk.Canvas(self, height=self._CANVAS_H,
+                                 bg=self.cget("bg"), highlightthickness=0,
+                                 cursor="hand2")
+        self._canvas.grid(row=1, column=0, sticky="ew", pady=(2, 0))
+
+        # ── Label info bas ──
         self._info_lbl = tk.Label(self, text="", font=F_SMALL, fg=C["t3"],
                                   bg=self.cget("bg"), anchor="w")
         self._info_lbl.grid(row=2, column=0, sticky="w")
-        self._update_label(variable.get())
 
-    def _on_change(self, val): self._update_label(val); (self._cmd and self._cmd(val))
+        # ── Bindings ──
+        self._canvas.bind("<Configure>",        self._draw)
+        self._canvas.bind("<ButtonPress-1>",    self._on_press)
+        self._canvas.bind("<B1-Motion>",        self._on_drag)
+        self._canvas.bind("<ButtonRelease-1>",  self._on_release)
+        self._canvas.bind("<Enter>",            self._on_enter)
+        self._canvas.bind("<Leave>",            self._on_leave)
 
+        # ── Sync variable → redraw (changement externe) ──
+        self._var.trace_add("write", self._on_var_change)
+
+        # ── État initial ──
+        self._update_label(self._var.get())
+
+    # ── Géométrie interne ─────────────────────────────────────────────────────
+    def _track_bounds(self):
+        w = self._canvas.winfo_width()
+        if w < 2 * self._PAD_X + 4:
+            return self._PAD_X, self._PAD_X
+        return self._PAD_X, w - self._PAD_X
+
+    def _val_to_x(self, val):
+        x0, x1 = self._track_bounds()
+        rng = self._to - self._from
+        if rng <= 0:
+            return x0
+        frac = (val - self._from) / rng
+        return x0 + frac * (x1 - x0)
+
+    def _x_to_val(self, x):
+        x0, x1 = self._track_bounds()
+        rng = self._to - self._from
+        if x1 <= x0:
+            return self._from
+        frac = (x - x0) / (x1 - x0)
+        raw  = self._from + frac * rng
+        snapped = round((raw - self._from) / self._resolution) * self._resolution + self._from
+        return max(self._from, min(self._to, snapped))
+
+    # ── Dessin ────────────────────────────────────────────────────────────────
+    def _draw(self, event=None):
+        cv = self._canvas
+        cv.delete("all")
+        w = cv.winfo_width()
+        h = cv.winfo_height()
+        if w < 4:
+            return
+        cy = h // 2
+        x0, x1 = self._track_bounds()
+        val = self._var.get()
+        tx  = self._val_to_x(val)
+
+        # Track fond
+        self._rr(cv, x0, cy - self._TRACK_H // 2, x1, cy + self._TRACK_H // 2,
+                 self._TRACK_H // 2, fill=C["input"], outline="")
+        # Track remplie (accent)
+        if tx > x0:
+            self._rr(cv, x0, cy - self._TRACK_H // 2, tx, cy + self._TRACK_H // 2,
+                     self._TRACK_H // 2, fill=C["accent_dk"], outline="")
+        # Thumb
+        if self._disabled:
+            thumb_color = C["t3"]
+        else:
+            thumb_color = C["accent"]
+        r = self._THUMB_R + (1 if (self._hover and not self._disabled) else 0)
+        cv.create_oval(tx - r, cy - r, tx + r, cy + r, fill=thumb_color, outline="")
+
+    def _rr(self, cv, x1, y1, x2, y2, r, **kw):
+        pts = [x1+r, y1, x2-r, y1, x2, y1, x2, y1+r,
+               x2, y2-r, x2, y2, x2-r, y2, x1+r, y2,
+               x1, y2, x1, y2-r, x1, y1+r, x1, y1]
+        cv.create_polygon(pts, smooth=True, **kw)
+
+    # ── Souris ────────────────────────────────────────────────────────────────
+    def _on_press(self, event):
+        if self._disabled:
+            return
+        self._dragging = True
+        self._apply_x(event.x)
+
+    def _on_drag(self, event):
+        if self._disabled or not self._dragging:
+            return
+        self._apply_x(event.x)
+
+    def _on_release(self, event):
+        if self._disabled:
+            return
+        self._dragging = False
+        self._draw()
+
+    def _on_enter(self, event):
+        if self._disabled:
+            return
+        self._hover = True
+        self._draw()
+
+    def _on_leave(self, event):
+        self._hover = False
+        self._dragging = False
+        self._draw()
+
+    def _apply_x(self, x):
+        val = self._x_to_val(x)
+        self._updating = True
+        self._var.set(int(val))
+        self._updating = False
+        self._draw()
+        self._update_label(val)
+        if self._cmd:
+            self._cmd(str(val))
+
+    # ── Trace externe ─────────────────────────────────────────────────────────
+    def _on_var_change(self, *args):
+        if self._updating:
+            return
+        self._draw()
+        self._update_label(self._var.get())
+
+    # ── Interface publique ────────────────────────────────────────────────────
     def _update_label(self, val):
         try:
             v = float(val)
             if self._unit == "s" and v >= 60: self._val_lbl.config(text=hms(v))
             elif self._unit == "s":           self._val_lbl.config(text=f"{int(v)} s")
             else: self._val_lbl.config(text=f"{int(v)} {self._unit}".strip())
-        except Exception: pass
+        except Exception:
+            pass
 
-    def set_info(self, text): self._info_lbl.config(text=text)
-    def set_state(self, state): self._scale.config(state=state)
+    def set_info(self, text):
+        self._info_lbl.config(text=text)
+
+    def set_state(self, state):
+        self._disabled = (state == "disabled")
+        self._canvas.config(cursor="" if self._disabled else "hand2")
+        self._draw()
 
 
 class RoundedCombo(tk.Frame):

@@ -1081,3 +1081,29 @@ frame=    0 fps=0.0 q=0.0 Lsize=N/A time=N/A bitrate=N/A speed=N/A elapsed=0:00:
 2026-08-30 10:44:04  INFO     Suppression : 4 image(s) → corbeille
 2026-08-30 10:44:05  INFO     Suppression : 1 image(s) → corbeille
 2026-08-30 10:44:16  INFO     Vider le dossier : 8 fichier(s) → corbeille
+2026-08-30 11:14:35  INFO     Démarrage — ffmpeg présent | corbeille (send2trash) ACTIVE
+2026-08-30 11:14:35  INFO     Vidéo chargée : The.Lost.Bus.2025.iTA-ENG.WEBDL.2160p.HEVC.HDR.x265-CYBER.mkv | 2h 09m 45s | 3840x1606 | 23.98 fps
+2026-08-30 11:14:35  INFO     Analyse couleur : HDR
+2026-08-30 11:14:39  INFO     Extraction lancée : 15 frame(s) ciblée(s) — The.Lost.Bus.2025.iTA-ENG.WEBDL.2160p.HEVC.HDR.x265-CYBER.mkv
+2026-08-30 11:14:43  INFO     Extraction terminée : 13 image(s), 2 noire(s) filtrée(s), 0 échec(s)
+2026-08-30 11:14:47  INFO     Vider le dossier : 13 fichier(s) → corbeille
+2026-08-30 11:50:43  INFO     Démarrage — ffmpeg présent | corbeille (send2trash) ACTIVE
+2026-08-30 11:50:44  INFO     Vidéo chargée : The.Lost.Bus.2025.iTA-ENG.WEBDL.2160p.HEVC.HDR.x265-CYBER.mkv | 2h 09m 45s | 3840x1606 | 23.98 fps
+2026-08-30 11:50:44  INFO     Analyse couleur : HDR
+2026-08-30 11:59:59  INFO     Démarrage — ffmpeg présent | corbeille (send2trash) ACTIVE
+2026-08-30 11:59:59  INFO     Vidéo chargée : The.Lost.Bus.2025.iTA-ENG.WEBDL.2160p.HEVC.HDR.x265-CYBER.mkv | 2h 09m 45s | 3840x1606 | 23.98 fps
+2026-08-30 11:59:59  INFO     Analyse couleur : HDR
+2026-08-30 12:14:02  INFO     Démarrage — ffmpeg présent | corbeille (send2trash) ACTIVE
+2026-08-30 12:14:02  INFO     Vidéo chargée : The.Lost.Bus.2025.iTA-ENG.WEBDL.2160p.HEVC.HDR.x265-CYBER.mkv | 2h 09m 45s | 3840x1606 | 23.98 fps
+2026-08-30 12:14:02  INFO     Analyse couleur : HDR
+2026-08-30 12:14:19  INFO     Extraction lancée : 20 frame(s) ciblée(s) — The.Lost.Bus.2025.iTA-ENG.WEBDL.2160p.HEVC.HDR.x265-CYBER.mkv
+2026-08-30 12:14:26  INFO     Extraction terminée : 17 image(s), 3 noire(s) filtrée(s), 0 échec(s)
+2026-08-30 12:14:37  INFO     Vider le dossier : 17 fichier(s) → corbeille
+2026-08-30 12:14:44  INFO     Extraction lancée : 20 frame(s) ciblée(s) — The.Lost.Bus.2025.iTA-ENG.WEBDL.2160p.HEVC.HDR.x265-CYBER.mkv
+2026-08-30 12:14:50  INFO     Extraction terminée : 14 image(s), 6 noire(s) filtrée(s), 0 échec(s)
+2026-08-30 12:15:01  INFO     Vider le dossier : 14 fichier(s) → corbeille
+2026-08-30 14:33:28  INFO     Démarrage — ffmpeg présent | corbeille (send2trash) ACTIVE
+2026-08-30 14:33:29  INFO     Vidéo chargée : The.Lost.Bus.2025.iTA-ENG.WEBDL.2160p.HEVC.HDR.x265-CYBER.mkv | 2h 09m 45s | 3840x1606 | 23.98 fps
+2026-08-30 14:33:29  INFO     Analyse couleur : HDR
+2026-08-30 14:33:53  INFO     Extraction lancée : 80 frame(s) ciblée(s) — The.Lost.Bus.2025.iTA-ENG.WEBDL.2160p.HEVC.HDR.x265-CYBER.mkv
+2026-08-30 14:34:15  INFO     Extraction terminée : 75 image(s), 5 noire(s) filtrée(s), 0 échec(s)

@@ -31,6 +31,7 @@ class AppConfig:
     sash_right:      int  = 700
     confirm_delete:  bool = True
     black_filter:    bool = True
+    black_threshold: int  = 5
     mark_key:        str  = "s"
     marked_files:    list = field(default_factory=list)
     hdr_tonemap:     str  = "hable"

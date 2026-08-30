@@ -118,10 +118,11 @@ class App(tk.Tk):
         self.v_winsize      = tk.StringVar(value=self._cfg.get("window_size","auto"))
         self.v_confirm_del  = tk.BooleanVar(value=bool(self._cfg.get("confirm_delete",True)))
         self.v_black_filter = tk.BooleanVar(value=bool(self._cfg.get("black_filter",True)))
+        self.v_black_thresh = tk.IntVar(value=int(self._cfg.get("black_threshold",5)))
         self.v_mark_key     = tk.StringVar(value=self._cfg.get("mark_key","s"))
         self.v_hdr_tonemap  = tk.StringVar(value=self._cfg.get("hdr_tonemap","hable"))
         # Auto-save sur changement de ces options
-        for _v in (self.v_confirm_del, self.v_black_filter, self.v_hdr_tonemap):
+        for _v in (self.v_confirm_del, self.v_black_filter, self.v_black_thresh, self.v_hdr_tonemap):
             _v.trace_add("write", lambda *a: self._auto_save_config())
 
         self.video_info={}; self.thumbs=[]      # v4 : refs PhotoImage par chemin
@@ -561,11 +562,20 @@ class App(tk.Tk):
         self._on_mode_change()
 
         bf=tk.Frame(inner,bg=C["bg"]); bf.grid(row=row,column=0,sticky="w",padx=PAD,pady=(4,0)); row+=1
-        tk.Checkbutton(bf,text="Supprimer les frames noires (luminosité < 5/255)",
+        tk.Checkbutton(bf,text="Supprimer les frames noires",
                        variable=self.v_black_filter,bg=C["bg"],fg=C["t2"],
                        selectcolor=C["input"],activebackground=C["bg"],
                        activeforeground=C["t1"],font=F_SMALL,anchor="w",
                        cursor="hand2").pack(side="left")
+        th=tk.Frame(inner,bg=C["bg"]); th.grid(row=row,column=0,sticky="w",padx=PAD+22,pady=(2,0)); row+=1
+        tk.Label(th,text="Seuil :",font=F_SMALL,fg=C["t2"],bg=C["bg"]).pack(side="left")
+        tk.Spinbox(th,from_=1,to=50,textvariable=self.v_black_thresh,
+                   width=4,font=F_SMALL,bg=C["input"],fg=C["t1"],
+                   insertbackground=C["t1"],buttonbackground=C["input"],
+                   relief="flat",highlightthickness=1,
+                   highlightbackground=C["border"],highlightcolor=C["accent"]
+                   ).pack(side="left",padx=(6,0))
+        tk.Label(th,text="/255",font=F_SMALL,fg=C["t2"],bg=C["bg"]).pack(side="left",padx=(4,0))
         # v4.14 (UX7) : aperçu du plan de capture avant extraction
         self._plan_lbl=tk.Label(inner,text="",font=F_SMALL,fg=C["t2"],
                                 bg=C["panel"],justify="left",anchor="w",
@@ -1118,15 +1128,14 @@ class App(tk.Tk):
         géométrie) au lieu de tester les 4 coordonnées de chaque vignette."""
         if not self.sel: return
         w=event.widget
-        KEEP=(tk.Entry,DarkEntry,DarkButton,tk.Scale,tk.Checkbutton,
+        KEEP=(tk.Entry,DarkEntry,DarkButton,DarkSlider,tk.Checkbutton,
               ttk.Scrollbar,tk.Scrollbar,tk.Menu,PillSelector,RoundedCombo)
         if isinstance(w,KEEP): return
-        # v4.6 : le clic est-il dans une vignette ? Chaque cellule/label de
-        # vignette porte un attribut _path (chantier n°1) : on remonte les
-        # parents jusqu'à le trouver (3-5 itérations Python, aucun winfo_*).
         cur=w
         while cur is not None:
             if getattr(cur,"_path",None) is not None:
+                return
+            if isinstance(cur,DarkSlider):
                 return
             cur=getattr(cur,"master",None)
         self._clear_selection()
@@ -1461,11 +1470,12 @@ class App(tk.Tk):
 
         # A3 : capturer les Tk vars dans le thread principal — les workers
         # ne doivent JAMAIS appeler .get() sur une variable Tkinter.
-        _do_filter = self.v_black_filter.get()
-        _tonemap   = self.v_hdr_tonemap.get()
+        _do_filter    = self.v_black_filter.get()
+        _black_thresh = self.v_black_thresh.get()
+        _tonemap      = self.v_hdr_tonemap.get()
         threading.Thread(target=self._worker,
                          args=(self.v_path.get(),self.v_outdir.get(),targets,
-                               _do_filter,_tonemap),
+                               _do_filter,_black_thresh,_tonemap),
                          daemon=True).start()
 
     def _cancel_extraction(self):
@@ -1492,14 +1502,15 @@ class App(tk.Tk):
         n = len(self._failed_frames)
         self._prog_lbl.config(text=f"Ré-extraction de {n} échec(s)…")
         # A3 : capturer les Tk vars dans le thread principal
-        _do_filter = self.v_black_filter.get()
-        _tonemap   = self.v_hdr_tonemap.get()
+        _do_filter    = self.v_black_filter.get()
+        _black_thresh = self.v_black_thresh.get()
+        _tonemap      = self.v_hdr_tonemap.get()
         threading.Thread(target=self._retry_worker,
                          args=(self.v_path.get(), self.v_outdir.get(),
-                               list(self._failed_frames), _do_filter, _tonemap),
+                               list(self._failed_frames), _do_filter, _black_thresh, _tonemap),
                          daemon=True).start()
 
-    def _retry_worker(self, vpath, outdir, failed, do_filter, tonemap):
+    def _retry_worker(self, vpath, outdir, failed, do_filter, black_thresh, tonemap):
         """Ré-extraction séquentielle (les échecs sont rares — pas besoin de pool).
         Même pipeline et même cascade de fallback que l'extraction normale.
         A3 : do_filter et tonemap capturés côté main thread."""
@@ -1532,7 +1543,7 @@ class App(tk.Tk):
                 except Exception as ex:
                     ok = False
                     last_reason = f"décodage image : {ex}"
-            if ok and do_filter and is_black_frame(np.array(img), threshold=5):
+            if ok and do_filter and is_black_frame(np.array(img), threshold=black_thresh):
                 ok = False
                 last_reason = "frame noire détectée (décochez le filtre pour la garder)"
             if ok:
@@ -1646,18 +1657,18 @@ class App(tk.Tk):
                 else: last_reason = r2 or last_reason
         return ok, last_reason, rc
 
-    def _worker(self,vpath,outdir,targets,do_filter,tonemap):
+    def _worker(self,vpath,outdir,targets,do_filter,black_thresh,tonemap):
         black_tcs=[]
         if self._ffmpeg_ok:
-            self._worker_ffmpeg(vpath,outdir,targets,black_tcs,do_filter,tonemap)
+            self._worker_ffmpeg(vpath,outdir,targets,black_tcs,do_filter,black_thresh,tonemap)
         else:
-            self._worker_opencv(vpath,outdir,targets,black_tcs,do_filter)
+            self._worker_opencv(vpath,outdir,targets,black_tcs,do_filter,black_thresh)
         self.after(0,self._extract_done,black_tcs)
 
     # ══════════════════════════════════════════════════════════════════════════
     #  WORKER FFMPEG — v3.0 : pipeline HDR→SDR si HDR détecté
     # ══════════════════════════════════════════════════════════════════════════
-    def _worker_ffmpeg(self,vpath,outdir,targets,black_tcs,do_filter,tonemap):
+    def _worker_ffmpeg(self,vpath,outdir,targets,black_tcs,do_filter,black_thresh,tonemap):
         # v4.1 : le flush ordonné (thread principal) alimente cette liste
         self._flush_black_tcs = black_tcs
         info=self.video_info
@@ -1714,7 +1725,7 @@ class App(tk.Tk):
                 return
             if do_filter:
                 arr=np.array(img)
-                if is_black_frame(arr,threshold=5):
+                if is_black_frame(arr,threshold=black_thresh):
                     try: os.remove(tmp_path)
                     except Exception: pass
                     self.after(0, self._on_worker_result, i, "black", None, "", t)
@@ -1741,7 +1752,7 @@ class App(tk.Tk):
                     log.exception("Worker inattendu : %s", exc)
 
     # ── Fallback OpenCV ───────────────────────────────────────────────────────
-    def _worker_opencv(self,vpath,outdir,targets,black_tcs,do_filter):
+    def _worker_opencv(self,vpath,outdir,targets,black_tcs,do_filter,black_thresh):
         cap=cv2.VideoCapture(vpath)
         tot=len(targets)
         info=self.video_info
@@ -1764,7 +1775,7 @@ class App(tk.Tk):
             if not ret: continue
             if color_limited: frame=self._expand_limited_range(frame)
             if do_filter and is_black_frame(
-                    np.array(Image.fromarray(cv2.cvtColor(frame,cv2.COLOR_BGR2RGB))),5):
+                    np.array(Image.fromarray(cv2.cvtColor(frame,cv2.COLOR_BGR2RGB))),black_thresh):
                 black_tcs.append(t)
                 self.after(0,self._black_skipped,t,i+1,tot,(i+1)/tot*100); continue
             img=Image.fromarray(cv2.cvtColor(frame,cv2.COLOR_BGR2RGB))
@@ -2215,6 +2226,7 @@ class App(tk.Tk):
             "sash_right":     s1,
             "confirm_delete": self.v_confirm_del.get(),
             "black_filter":   self.v_black_filter.get(),
+            "black_threshold": self.v_black_thresh.get(),
             "mark_key":       self.v_mark_key.get(),
             "hdr_tonemap":    self.v_hdr_tonemap.get(),
             "last_video_dir":  self._cfg.get("last_video_dir", ""),
