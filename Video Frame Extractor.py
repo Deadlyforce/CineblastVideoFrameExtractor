@@ -55,6 +55,7 @@ log = logging.getLogger("vfe")
 # ─────────────────────────────────────────────────────────────────────────────
 #  Constantes applicatives
 # ─────────────────────────────────────────────────────────────────────────────
+APP_VERSION  = "4.5"
 LEFT_MIN_W   = 300
 WINDOW_SIZES = ["auto", "1920x1200", "1920x1080", "1280x800", "1280x720"]
 FFMPEG_WORKERS = 3
@@ -94,7 +95,7 @@ def trash_files(paths):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Video Frame Extractor  —  v4.5")
+        self.title(f"Video Frame Extractor  —  v{APP_VERSION}")
         self.configure(bg=C["bg"])
         self._cfg = load_config()
         self._ffmpeg_ok = ffmpeg_available()
@@ -263,7 +264,7 @@ class App(tk.Tk):
                  fg=C["t2"],bg=C["bg"]).pack(side="left")
         tk.Label(hdr,text="Extractor",font=("Segoe UI Semibold",20),
                  fg=C["accent"],bg=C["bg"]).pack(side="left",padx=(4,0))
-        tk.Label(hdr,text=" v4.0",font=("Segoe UI",9),
+        tk.Label(hdr,text=f" v{APP_VERSION}",font=("Segoe UI",9),
                  fg=C["t3"],bg=C["bg"]).pack(side="left",anchor="s",pady=(0,2))
 
         sc_frame = tk.Frame(p, bg=C["bg"])

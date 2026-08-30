@@ -1,10 +1,13 @@
 """Construction des commandes ffmpeg / ffprobe et détection HDR —
 extraits de Video Frame Extractor.py (refactor A1). Aucune dépendance tkinter."""
 import json
+import logging
 import os
 import subprocess
 import tempfile
 import time as _time
+
+log = logging.getLogger("vfe")
 
 # ── Détection HDR ────────────────────────────────────────────────────────────
 HDR_TRANSFERS   = {"smpte2084", "arib-std-b67", "smpte428", "bt2020-10", "bt2020-12"}
@@ -38,8 +41,8 @@ def get_display_size(path, raw_w, raw_h):
                     sar_n, sar_d = int(sar_n), int(sar_d)
                     if sar_n > 0 and sar_d > 0 and (sar_n, sar_d) != (1, 1):
                         return int(round(raw_w * sar_n / sar_d)), raw_h
-    except Exception:
-        pass
+    except Exception as ex:
+        log.debug("get_display_size : %s", ex)
     return raw_w, raw_h
 
 
@@ -75,8 +78,8 @@ def detect_hdr(vpath):
                 "colorspace":  colorspace,
                 "color_range": color_range,
             }
-    except Exception:
-        pass
+    except Exception as ex:
+        log.debug("detect_hdr : %s", ex)
     return info
 
 
@@ -85,7 +88,8 @@ def zscale_available():
     try:
         r = subprocess.run(["ffmpeg", "-filters"], capture_output=True, text=True, timeout=10)
         return "zscale" in r.stdout
-    except Exception:
+    except Exception as ex:
+        log.debug("zscale_available : %s", ex)
         return False
 
 
