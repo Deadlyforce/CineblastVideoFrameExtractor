@@ -173,7 +173,9 @@ class App(tk.Tk):
 
     def _get_sash_positions(self):
         try: return int(self._pane.sash_coord(0)[0]),int(self._pane.sash_coord(1)[0])
-        except Exception: return 310,700
+        except Exception as ex:
+            log.debug("_get_sash_positions : %s", ex)
+            return 310,700
 
     def _apply_window_size(self,size):
         self.update_idletasks()
@@ -1210,7 +1212,8 @@ class App(tk.Tk):
 
         try:
             targets = self._compute_targets()
-        except Exception:
+        except Exception as ex:
+            log.debug("_update_capture_plan : %s", ex)
             self._plan_lbl.config(text="")
             return
 
@@ -2266,7 +2269,8 @@ class App(tk.Tk):
             for f in os.listdir(workdir):
                 m=pat.match(f)
                 if m: max_n=max(max_n,int(m.group(1)))
-        except Exception: pass
+        except Exception as ex:
+            log.debug("_next_num_in_workdir : %s", ex)
         return max_n+1
 
     def _move_to_workdir(self):
@@ -2337,7 +2341,8 @@ class App(tk.Tk):
                 ow, oh = full.size
                 full.draft("RGB", (sz, sz))
                 p = full.copy()
-            except Exception:
+            except Exception as ex:
+                log.debug("_show_preview (ouverture image) : %s", ex)
                 p = entry["img"].copy() if entry.get("img") is not None else None
                 ow, oh = (p.size if p is not None else (0, 0))
 

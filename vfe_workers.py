@@ -1,7 +1,10 @@
 """Helpers OpenCV pour le fallback sans ffmpeg — extraits de Video Frame Extractor.py (Lot 7c)."""
 
+import logging
 import subprocess
 import numpy as np
+
+log = logging.getLogger("vfe")
 
 
 def detect_limited_range_opencv(vpath, cap, video_info):
@@ -14,8 +17,8 @@ def detect_limited_range_opencv(vpath, cap, video_info):
             out = r.stdout.strip().lower()
             if "tv" in out or "mpeg" in out: return True
             if "pc" in out or "full" in out: return False
-    except Exception:
-        pass
+    except Exception as ex:
+        log.debug("detect_limited_range_opencv (ffprobe) : %s", ex)
     try:
         dur = video_info.get("duration", 0)
         mins = []; maxs = []
@@ -27,8 +30,8 @@ def detect_limited_range_opencv(vpath, cap, video_info):
                 maxs.append(int(f.max()))
         if mins and min(mins) >= 14 and max(maxs) <= 237:
             return True
-    except Exception:
-        pass
+    except Exception as ex:
+        log.debug("detect_limited_range_opencv (pixel) : %s", ex)
     return False
 
 
