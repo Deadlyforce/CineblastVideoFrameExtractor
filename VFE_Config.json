@@ -1,17 +1,17 @@
 {
-  "video_path": "C:/Users/norma/Desktop/The.Lost.Bus.2025.iTA-ENG.WEBDL.2160p.HEVC.HDR.x265-CYBER.mkv",
+  "video_path": "C:/Users/norma/Desktop/Evil Dead Burn (2026).mkv",
   "output_dir": "C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/Extraction Photos Temp",
-  "work_dir": "C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/2026-08-24 Backrooms/photos",
-  "generic_name": "Backr",
+  "work_dir": "C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/2026-09-01 Evil Dead Burn/photos",
+  "generic_name": "EvilDB",
   "mode": "count",
-  "count_val": 80,
+  "count_val": 500,
   "interval_val": 45,
   "thumb_size": 250,
   "col_count": 5,
   "preview_size": 650,
   "window_size": "1920x1200",
   "sash_left": 301,
-  "sash_right": 1702,
+  "sash_right": 1705,
   "confirm_delete": false,
   "black_filter": true,
   "black_threshold": 5,
@@ -20,6 +20,6 @@
   "hdr_tonemap": "hable",
   "last_video_dir": "C:/Users/norma/Desktop",
   "last_output_dir": "C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/Extraction Photos Temp",
-  "last_work_dir": "C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/2026-08-24 Backrooms/photos",
-  "window_h": 1309
+  "last_work_dir": "C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/2026-09-01 Evil Dead Burn/photos",
+  "window_h": 1246
 }
