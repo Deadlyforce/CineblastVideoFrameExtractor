@@ -161,3 +161,10 @@ NameError: name 'QLabel' is not defined
 2026-09-03 19:38:04  INFO     [Qt] Vider le dossier : 133 fichier(s) → corbeille
 2026-09-03 19:45:27  INFO     [Qt] Grille rechargée : 0 image(s)
 2026-09-03 19:45:35  INFO     [Qt] Grille rechargée : 0 image(s)
+2026-09-03 19:51:36  INFO     [Qt] Grille rechargée : 0 image(s)
+2026-09-03 19:51:59  INFO     [Qt] Grille rechargée : 481 image(s)
+2026-09-03 19:52:22  INFO     [Qt] Suppression : 1 image(s) → corbeille
+2026-09-03 19:52:31  INFO     [Qt] Suppression : 1 image(s) → corbeille
+2026-09-03 19:52:33  INFO     [Qt] Suppression : 1 image(s) → corbeille
+2026-09-03 19:52:36  INFO     [Qt] Suppression : 1 image(s) → corbeille
+2026-09-03 19:52:56  INFO     [Qt] Suppression : 7 image(s) → corbeille
