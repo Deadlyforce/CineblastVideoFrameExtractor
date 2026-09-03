@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+VFE_Config.json
+VFE_Log.txt
+app_icon.png
+# archive_tkinter/      # décommente pour garder l'ancienne app hors du dépôt
+# archive_prototypes/
