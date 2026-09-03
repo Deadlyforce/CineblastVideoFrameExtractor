@@ -1,0 +1,3 @@
+2026-09-03 19:50:25  INFO     Démarrage — ffmpeg présent | corbeille (send2trash) ACTIVE
+2026-09-03 19:50:25  INFO     Vidéo chargée : Evil Dead Burn (2026).mkv | 1h 50m 31s | 3840x1608 | 23.98 fps
+2026-09-03 19:50:25  INFO     Analyse couleur : HDR

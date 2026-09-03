@@ -38,7 +38,135 @@ sys.excepthook = _qt_excepthook
 
 # LOT 7 (fix) : flèches globales — imports nécessaires
 from PySide6.QtCore import QEvent
-from PySide6.QtWidgets import QAbstractItemView
+from PySide6.QtWidgets import QAbstractItemView, QDialog
+
+import re
+
+try:
+    from send2trash import send2trash
+    _TRASH_OK = True
+except ImportError:
+    send2trash = None
+    _TRASH_OK = False
+
+
+def trash_files(paths):
+    """LOT 8 : envoi groupé à la corbeille, fallback os.remove
+    (même comportement que l'ancienne app, chemins Windows normalisés)."""
+    existing = [p for p in paths if os.path.exists(p)]
+    if not existing:
+        return []
+    normalized = [os.path.normpath(p) for p in existing]
+    if _TRASH_OK:
+        try:
+            send2trash(normalized)
+            return []
+        except Exception as ex:
+            log.warning("send2trash en échec (%s) — fallback os.remove", ex)
+    errors = []
+    for p in existing:
+        try:
+            os.remove(p)
+        except Exception as ex:
+            errors.append((p, ex))
+    return errors
+
+
+# LOT 10B (fix) : import explicite placé juste avant les classes,
+# quel que soit l'ordre du reste du fichier (imports dupliqués = sans danger).
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QPixmap
+from PySide6.QtWidgets import (QDialog, QHBoxLayout, QLabel, QPushButton,
+                               QVBoxLayout)
+
+
+class BlackThumb(QLabel):
+    """LOT 10B : vignette 150 px d'une frame noire — clic = visionneuse."""
+
+    def __init__(self, path, tc, parent=None):
+        super().__init__(parent)
+        self._path = path
+        self._tc = tc
+        self.setFixedSize(150, 84)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setStyleSheet(
+            f"background-color: {TH.SURFACE_CARD};"
+            f"border: 1px solid {TH.BORDER_SUBTLE};"
+            "border-radius: 6px;")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        if path and os.path.exists(path):
+            pix = QPixmap(path)
+            if not pix.isNull():
+                self.setPixmap(pix.scaled(146, 80, Qt.KeepAspectRatio,
+                                          Qt.SmoothTransformation))
+        self.setToolTip(hms(tc))
+
+    def mousePressEvent(self, e):
+        if self._path:
+            BlackViewer(self, self._path, self._tc).exec()
+        super().mousePressEvent(e)
+
+
+class BlackViewer(QDialog):
+    """LOT 10B : visionneuse de frame noire — image 800 px encadrée dans
+    une carte grise (même style que l'aperçu Zone D), fond opaque sombre.
+    Fermeture : clic sur l'image, hors image, ×, ou Échap."""
+
+    def __init__(self, parent, path, tc=0):
+        super().__init__(parent)
+        self.setModal(True)
+        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
+        self.setStyleSheet(f"QDialog {{ background-color: {TH.BG_APP}; }}")
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(24, 24, 24, 24)
+        lay.setSpacing(12)
+
+        top = QHBoxLayout()
+        top.setSpacing(8)
+        title = QLabel(f"Frame noire — {hms(tc)}" if tc else "Frame noire")
+        title.setStyleSheet(f"color: {TH.TEXT_SECOND}; font-size: 12px;")
+        top.addWidget(title)
+        top.addStretch()
+        xbtn = QPushButton("×")
+        xbtn.setFixedSize(28, 28)
+        xbtn.setStyleSheet(
+            f"background-color: {TH.SURFACE_ELEV}; color: {TH.TEXT_PRIMARY};"
+            f"border: 1px solid {TH.BORDER_STRONG}; border-radius: 6px;"
+            "font-size: 16px;")
+        xbtn.clicked.connect(self.close)
+        top.addWidget(xbtn)
+        lay.addLayout(top)
+
+        card = QWidget()
+        card.setStyleSheet(
+            f"background-color: {TH.SURFACE_CARD};"
+            f"border: 1px solid {TH.BORDER_SUBTLE};"
+            "border-radius: 6px;")
+        cl = QVBoxLayout(card)
+        cl.setContentsMargins(12, 12, 12, 12)
+        img = QLabel(card)
+        pix = QPixmap(path)
+        if not pix.isNull():
+            img.setPixmap(pix.scaled(800, 520, Qt.KeepAspectRatio,
+                                     Qt.SmoothTransformation))
+        img.setStyleSheet("background: transparent; border: none;")
+        img.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        cl.addWidget(img)
+        lay.addWidget(card, 0, Qt.AlignmentFlag.AlignCenter)
+
+        self.resize(920, 680)
+        geo = QApplication.primaryScreen().availableGeometry()
+        self.move(geo.center().x() - self.width() // 2,
+                  geo.center().y() - self.height() // 2)
+
+    def mousePressEvent(self, e):
+        self.close()
+        super().mousePressEvent(e)
+
+    def keyPressEvent(self, e):
+        if e.key() == Qt.Key.Key_Escape:
+            self.close()
+        super().keyPressEvent(e)
 
 from PySide6.QtCore import Qt, QThread, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QImageReader, QKeySequence, QPixmap, QShortcut
@@ -71,7 +199,7 @@ from concurrent.futures import ThreadPoolExecutor
 from PIL import Image
 import numpy as np
 
-from vfe_config import load_config
+from vfe_config import load_config, save_config
 from vfe_ffmpeg import (
     build_ffmpeg_cmd,
     build_ffmpeg_cmd_fallback,
@@ -86,7 +214,7 @@ from vfe_ffmpeg import (
 )
 from vfe_plan import compute_targets
 from vfe_utils import (_parse_tc_from_filename, dir_parent_label, frame_filename,
-                       hms, is_black_frame)
+                       hms, is_black_frame, tc_str)
 
 import theme as TH
 from theme import QSS
@@ -122,15 +250,16 @@ class ExtractWorker(QThread):
     finished_all = Signal()
 
     def __init__(self, parent, vpath, outdir, targets, do_filter, black_thresh,
-                 tonemap, is_cancelled):
+                 tonemap, is_cancelled, black_dir=""):
         super().__init__(parent)
         self._vpath = vpath
         self._outdir = outdir
-        self._targets = targets          # liste de couples (index_plan, t_sec)
+        self._targets = targets
         self._do_filter = do_filter
         self._black_thresh = black_thresh
         self._tonemap = tonemap
         self._is_cancelled = is_cancelled
+        self._black_dir = black_dir
 
     def run(self):
         app = self.parent()
@@ -233,11 +362,18 @@ class ExtractWorker(QThread):
             self.result_ready.emit(i, "fail", "", f"décodage image : {ex}", t)
             return
         if self._do_filter and is_black_frame(np.array(img), threshold=self._black_thresh):
+            bpath = ""
             try:
-                os.remove(tmp_path)
+                os.makedirs(self._black_dir, exist_ok=True)
+                bpath = os.path.join(self._black_dir, f"black_{tc_str(t)}.jpg")
+                shutil.move(tmp_path, bpath)
             except Exception:
-                pass
-            self.result_ready.emit(i, "black", "", "", t)
+                bpath = ""
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
+            self.result_ready.emit(i, "black", bpath, "", t)
             return
         fname = frame_filename(base, i + 1, t)
         fpath = os.path.join(self._outdir, fname)
@@ -256,7 +392,7 @@ class ExtractWorker(QThread):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Cineblast VFE — shell Qt (LOT 3)")
+        self.setWindowTitle("Cineblast VFE")
         self.cfg = load_config()
         self._ffmpeg_ok = ffmpeg_available()
         self.video_info = {}
@@ -324,10 +460,30 @@ class MainWindow(QMainWindow):
 
         self._preview_path = None
         self._preview_cache = {}
+        self._black_paths = {}
+        self._black_dir = os.path.join(tempfile.gettempdir(), "vfe_black_frames")
         self._mark_shortcut = None
         self._rebind_mark_key()
         self._reload_extraction_folder()
         QApplication.instance().installEventFilter(self)
+
+        # LOT 10 : auto-save debouncé (400 ms) sur tous les réglages
+        self._save_timer = QTimer(self)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.timeout.connect(self._do_save)
+        for w in (self._sl_count, self._sl_intv):
+            w.valueChanged.connect(lambda *_: self._auto_save())
+        self._mode_count.clicked.connect(lambda *_: self._auto_save())
+        self._mode_intv.clicked.connect(lambda *_: self._auto_save())
+        self._sw_black.toggled.connect(lambda *_: self._auto_save())
+        self._confirm_switch.toggled.connect(lambda *_: self._auto_save())
+        self._seuil.textChanged.connect(lambda *_: self._auto_save())
+        self._generic_entry.textChanged.connect(lambda *_: self._auto_save())
+        self._mark_key_entry.textChanged.connect(lambda *_: self._auto_save())
+        for algo, btn in self._tm_buttons.items():
+            btn.toggled.connect(lambda *_: self._auto_save())
+        for c in (self._c_tsize, self._c_cols, self._c_psize):
+            c.currentIndexChanged.connect(lambda *_: self._auto_save())
 
         self._status("Configuration chargée depuis VFE_Config.json (lecture seule).")
 
@@ -427,7 +583,10 @@ class MainWindow(QMainWindow):
         )
         if p:
             self._load_video_info(p)
-            self._status(f"Vidéo chargée : {os.path.basename(p)} (non sauvegardé — lecture seule)")
+            self.cfg["video_path"] = p
+            self.cfg["last_video_dir"] = os.path.dirname(p)
+            self._auto_save()
+            self._status(f"Vidéo chargée : {os.path.basename(p)}", 4000)
 
     def _load_video_info(self, path):
         cap = cv2.VideoCapture(path)
@@ -541,7 +700,8 @@ class MainWindow(QMainWindow):
             self.cfg["output_dir"] = p
             self.cfg["last_output_dir"] = p
             self._out_btn.set_full_text(os.path.basename(p.rstrip("/\\")))
-            self._status("Dossier d'extraction défini (non sauvegardé — lecture seule).")
+            self._auto_save()
+            self._status("Dossier d'extraction défini.", 4000)
 
     def _pick_workdir(self):
         initial = self.cfg.get("last_work_dir", "")
@@ -552,7 +712,8 @@ class MainWindow(QMainWindow):
             self.cfg["work_dir"] = p
             self.cfg["last_work_dir"] = p
             self._work_btn.set_full_text(dir_parent_label(p))
-            self._status("Dossier de travail défini (non sauvegardé — lecture seule).")
+            self._auto_save()
+            self._status("Dossier de travail défini.", 4000)
 
     def _current_tonemap(self):
         for algo, btn in self._tm_buttons.items():
@@ -571,8 +732,19 @@ class MainWindow(QMainWindow):
                        if f.lower().endswith((".jpg", ".jpeg"))), key=str.lower)
         entries = [{"path": os.path.join(outdir, f),
                     "tc": _parse_tc_from_filename(f)} for f in jpgs]
+        if not entries:
+            vp = getattr(self, "_video_path", "") or self.cfg.get("video_path", "")
+            if vp and os.path.exists(vp):
+                self._grid_widget.set_empty_message(
+                    "Aucune image extraite.\nLancez une extraction pour remplir la grille.")
+            else:
+                self._grid_widget.set_empty_message(
+                    "Aucune vidéo chargée.\n"
+                    "Choisissez un fichier source dans le panneau de gauche.")
         self._grid_widget.set_entries(entries)
         self._upd_badges()
+        self._restore_marked()
+        self._restore_preview()
         self._zone_c.verticalScrollBar().setValue(0)
         self._grid_widget.update()
         log.info("Grille rechargée : %d image(s)", len(entries))
@@ -589,9 +761,13 @@ class MainWindow(QMainWindow):
         g = self._grid_widget
         self._badge_total.setText(f"{len(g.thumbs)} image(s)")
         n = len(g.sel)
-        self._badge_sel.setText(f"{n} sélectionnée(s)" if n else "")
+        self._badge_sel.setText(f"{n} sélectionnée(s)")
         m = len(g.marked)
-        self._badge_mark.setText(f"{m} marquée(s)" if m else "")
+        self._badge_mark.setText(f"{m} marquée(s)")
+        if hasattr(self, "_del_btn"):
+            self._del_btn.setEnabled(bool(n))
+        if hasattr(self, "_move_btn"):
+            self._move_btn.setEnabled(bool(n or m))
 
     def _on_selection_changed(self):
         self._upd_badges()
@@ -646,18 +822,50 @@ class MainWindow(QMainWindow):
         self._m3_lbl.setText("—")
 
     def eventFilter(self, obj, e):
-        """LOT 7 (fix) : flèches globales via un filtre applicatif —
-        intercepte les flèches AVANT que n'importe quel widget (bouton,
-        scroll area…) puisse les consommer. Exception : saisie réelle
-        dans un champ, un combo ou une liste déroulante."""
-        if e.type() == QEvent.Type.KeyPress and e.key() in (
-                Qt.Key.Key_Left, Qt.Key.Key_Right,
-                Qt.Key.Key_Up, Qt.Key.Key_Down):
+        """LOT 7 (fix) + LOT 8 + LOT 9A : flèches, Suppr/Retour arrière,
+        Ctrl+A (tout sélectionner) et Échap (désélectionner) globaux via
+        un filtre applicatif. Exception : saisie réelle dans un champ,
+        un combo ou une liste déroulante."""
+        if e.type() == QEvent.Type.KeyPress:
             fw = QApplication.focusWidget()
-            if not isinstance(fw, (QLineEdit, QComboBox, QAbstractItemView)):
-                self._grid_widget.keyPressEvent(e)
-                return True
+            typing = isinstance(fw, (QLineEdit, QComboBox, QAbstractItemView))
+            if e.key() in (Qt.Key.Key_Left, Qt.Key.Key_Right,
+                           Qt.Key.Key_Up, Qt.Key.Key_Down):
+                if not typing:
+                    self._grid_widget.keyPressEvent(e)
+                    return True
+            elif e.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+                if not typing:
+                    self._delete_selected()
+                    return True
+            elif (e.key() == Qt.Key.Key_A
+                  and e.modifiers() & Qt.KeyboardModifier.ControlModifier):
+                if not typing:
+                    self._select_all()
+                    return True
+            elif e.key() == Qt.Key.Key_Escape:
+                if not typing:
+                    self._clear_selection()
+                    return True
         return super().eventFilter(obj, e)
+
+    def _select_all(self):
+        g = self._grid_widget
+        if not g.thumbs:
+            return
+        g.sel = {en["path"] for en in g.thumbs}
+        g._anchor = g.thumbs[0]["path"]
+        g.update()
+        g.selection_changed.emit()
+
+    def _clear_selection(self):
+        g = self._grid_widget
+        if not g.sel:
+            return
+        g.sel.clear()
+        g._anchor = None
+        g.update()
+        g.selection_changed.emit()
 
     def _mark_selection(self):
         g = self._grid_widget
@@ -670,12 +878,14 @@ class MainWindow(QMainWindow):
             g.marked |= set(g.sel)
         g.update()
         self._upd_badges()
+        self._auto_save()
 
     def _unmark_all(self):
         g = self._grid_widget
         g.marked.clear()
         g.update()
         self._upd_badges()
+        self._auto_save()
 
     def _rebind_mark_key(self):
         if getattr(self, "_mark_shortcut", None) is not None:
@@ -694,9 +904,282 @@ class MainWindow(QMainWindow):
             return
         self._mark_selection()
 
+    # ── LOT 8 : suppression / vider / déplacement ──────────────
+    def _delete_selected(self):
+        from PySide6.QtWidgets import QMessageBox
+        g = self._grid_widget
+        if not g.sel:
+            return
+        n = len(g.sel)
+        if self.cfg.get("confirm_delete", True):
+            r = QMessageBox.question(
+                self, "Supprimer",
+                f"Supprimer {n} image(s) sélectionnée(s) ?\n"
+                "Les fichiers seront déplacés vers la corbeille.")
+            if r != QMessageBox.StandardButton.Yes:
+                return
+        deleted = list(g.sel)
+        first_pos = min(g._position_of(p) for p in deleted)
+        errors = trash_files(deleted)
+        log.info("Suppression : %d image(s) → corbeille%s",
+                 len(deleted), f" ({len(errors)} erreur(s))" if errors else "")
+        dset = set(deleted)
+        for p in deleted:
+            g.marked.discard(p)
+            g.thumb_by_path.pop(p, None)
+            self._preview_cache.pop(p, None)
+        g.thumbs = [e for e in g.thumbs if e["path"] not in dset]
+        g.sel.clear()
+        g._anchor = None
+        if errors:
+            QMessageBox.warning(
+                self, "Erreurs",
+                "Fichier(s) non supprimé(s) :\n" +
+                "\n".join(f"{os.path.basename(p)} : {ex}" for p, ex in errors))
+        if not g.thumbs:
+            g.clear_all()
+            self._reset_preview()
+            self._upd_badges()
+            return
+        new_pos = min(first_pos, len(g.thumbs) - 1)
+        new_path = g.thumbs[new_pos]["path"]
+        g.sel.add(new_path)
+        g._anchor = new_path
+        g.update()
+        g.selection_changed.emit()
+        g._ensure_visible(new_pos)
+        self._status(f"{n} image(s) supprimée(s) → corbeille", 6000)
+        self._auto_save()
+
+    def _clear_output_dir(self):
+        from PySide6.QtWidgets import QMessageBox
+        if getattr(self, "_extracting", False):
+            self._status("Attendez la fin de l'extraction en cours.", 4000)
+            return
+        outdir = self.cfg.get("output_dir", "")
+        if not outdir or not os.path.isdir(outdir):
+            self._status("Aucun dossier d'extraction défini ou inexistant.", 4000)
+            return
+        jpgs = [f for f in os.listdir(outdir)
+                if f.lower().endswith((".jpg", ".jpeg"))]
+        if not jpgs:
+            self._status("Le dossier est déjà vide.", 4000)
+            return
+        r = QMessageBox.question(
+            self, "Vider le dossier",
+            f"Déplacer {len(jpgs)} fichier(s) JPG vers la corbeille ?")
+        if r != QMessageBox.StandardButton.Yes:
+            return
+        errors = trash_files([os.path.join(outdir, f) for f in jpgs])
+        log.info("Vider le dossier : %d fichier(s) → corbeille",
+                 len(jpgs) - len(errors))
+        self._grid_widget.clear_all()
+        self._failed_frames = []
+        self._failed_tcs = []
+        self._retry_btn.setEnabled(False)
+        self._retry_btn.setText("Ré-extraire les échecs")
+        self._reset_preview()
+        self._prog.setValue(0)
+        self._prog_lbl.setText(
+            f"{len(jpgs) - len(errors)} fichier(s) déplacé(s) vers la corbeille")
+        self._upd_badges()
+
+    def _next_num_in_workdir(self, workdir, generic):
+        pat = re.compile(r"^" + re.escape(generic) + r"_(\d+)\.jpe?g$",
+                         re.IGNORECASE)
+        max_n = 0
+        try:
+            for f in os.listdir(workdir):
+                m = pat.match(f)
+                if m:
+                    max_n = max(max_n, int(m.group(1)))
+        except Exception as ex:
+            log.debug("_next_num_in_workdir : %s", ex)
+        return max_n + 1
+
+    def _move_to_workdir(self):
+        g = self._grid_widget
+        combined = g.sel | g.marked
+        if not combined:
+            self._status("Aucune image sélectionnée ni marquée.")
+            return
+        workdir = (self.cfg.get("work_dir", "") or "").strip()
+        if not workdir or not os.path.isdir(workdir):
+            self._status(f"Dossier de travail introuvable : {workdir}")
+            return
+        generic = (self._generic_entry.text() or "").strip() or "capture"
+        paths = sorted(combined)
+        n = len(paths)
+        num = self._next_num_in_workdir(workdir, generic)
+        moves = []
+        for src in paths:
+            while True:
+                dst = os.path.join(workdir, f"{generic}_{num:04d}.jpg")
+                if not os.path.exists(dst):
+                    break
+                num += 1
+            moves.append((src, dst))
+            num += 1
+        ok = 0
+        errors = []
+        moved = set()
+        for src, dst in moves:
+            try:
+                shutil.move(src, dst)
+                ok += 1
+                moved.add(src)
+            except Exception as ex:
+                errors.append(f"{os.path.basename(src)} → {ex}")
+        log.info("Déplacement : %d/%d image(s) → %s", ok, n, workdir)
+        for p in moved:
+            g.sel.discard(p)
+            g.marked.discard(p)
+            g.thumb_by_path.pop(p, None)
+            self._preview_cache.pop(p, None)
+        g.thumbs = [e for e in g.thumbs if e["path"] not in moved]
+        g._anchor = None
+        g.update()
+        self._reset_preview()
+        self._upd_badges()
+        msg = f"{ok}/{n} image(s) déplacée(s) vers {os.path.basename(workdir)}"
+        if errors:
+            msg += f"  ({len(errors)} erreur(s))"
+        self._status(msg, 6000)
+        self._auto_save()
+
+    # ── LOT 10 : persistance de la configuration ───────────────
+    def _collect_config(self):
+        g = self._grid_widget
+        try:
+            thresh = int(self._seuil.text())
+        except ValueError:
+            thresh = 5
+        return {
+            "video_path": getattr(self, "_video_path", "") or self.cfg.get("video_path", ""),
+            "output_dir": self.cfg.get("output_dir", ""),
+            "work_dir": self.cfg.get("work_dir", ""),
+            "generic_name": (self._generic_entry.text() or "").strip() or "capture",
+            "mode": "count" if self._mode_count.isChecked() else "interval",
+            "count_val": self._sl_count.value(),
+            "interval_val": self._sl_intv.value(),
+            "thumb_size": int(self._c_tsize.currentText().replace("px", "").strip()),
+            "col_count": int(self._c_cols.currentText()),
+            "preview_size": int(self._c_psize.currentText().replace("px", "").strip()),
+            "window_size": self.cfg.get("window_size", "auto"),
+            "sash_left": self.cfg.get("sash_left", 310),
+            "sash_right": self.cfg.get("sash_right", 700),
+            "confirm_delete": self._confirm_switch.isChecked(),
+            "black_filter": self._sw_black.isChecked(),
+            "black_threshold": thresh,
+            "mark_key": (self._mark_key_entry.text() or "").strip(),
+            "hdr_tonemap": self._current_tonemap(),
+            "last_video_dir": self.cfg.get("last_video_dir", ""),
+            "last_output_dir": self.cfg.get("last_output_dir", ""),
+            "last_work_dir": self.cfg.get("last_work_dir", ""),
+            "marked_files": sorted(os.path.basename(p) for p in g.marked),
+            "last_preview_file": os.path.basename(self._preview_path)
+            if getattr(self, "_preview_path", None) else "",
+            "window_h": self.height(),
+        }
+
+    def _auto_save(self):
+        self._save_timer.stop()
+        self._save_timer.start(400)
+
+    def _do_save(self):
+        save_config(self._collect_config())
+
+    def _save_action(self):
+        self._do_save()
+        self._status("Configuration sauvegardée.", 3000)
+
+    def _restore_marked(self):
+        saved = set(os.path.basename(p) for p in self.cfg.get("marked_files", []))
+        if not saved:
+            return
+        g = self._grid_widget
+        for e in g.thumbs:
+            if os.path.basename(e["path"]) in saved:
+                g.marked.add(e["path"])
+        if g.marked:
+            g.update()
+            self._upd_badges()
+
+    def _show_black_panel(self):
+        """LOT 10B : panneau des frames noires exclues — vignettes 150 px
+        cliquables (visionneuse lightbox 650 px)."""
+        from PySide6.QtWidgets import (QGridLayout, QPushButton, QScrollArea,
+                                       QVBoxLayout, QWidget)
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Frames noires exclues")
+        dlg.resize(720, 560)
+        v = QVBoxLayout(dlg)
+        v.setContentsMargins(16, 16, 16, 16)
+        v.setSpacing(12)
+        t = QLabel(f"{len(self._black_tcs)} frame(s) noire(s) exclue(s) de l'extraction.")
+        t.setStyleSheet(f"color: {TH.TEXT_SECOND}; font-size: 12px;")
+        v.addWidget(t)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        gridw = QWidget()
+        gl = QGridLayout(gridw)
+        gl.setContentsMargins(4, 4, 4, 4)
+        gl.setSpacing(12)
+        cols = 4
+        for idx, tc in enumerate(self._black_tcs):
+            cell = QWidget()
+            cl = QVBoxLayout(cell)
+            cl.setContentsMargins(0, 0, 0, 0)
+            cl.setSpacing(4)
+            thumb = BlackThumb(self._black_paths.get(tc), tc)
+            cl.addWidget(thumb, 0, Qt.AlignmentFlag.AlignHCenter)
+            tl = QLabel(hms(tc))
+            tl.setStyleSheet("color: %s; font-size: 12px; font-family: Consolas;"
+                             % TH.TEXT_MUTED)
+            tl.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+            cl.addWidget(tl)
+            gl.addWidget(cell, idx // cols, idx % cols)
+        # LOT 10B (fix) : rangées aimantées en haut, espacement 12 px de la
+        # charte — l'espace vide part en bas au lieu d'écarter les rangées.
+        gl.setRowStretch(gl.rowCount(), 1)
+        scroll.setWidget(gridw)
+        v.addWidget(scroll, 1)
+        b = QPushButton("Fermer")
+        b.setObjectName("ghost")
+        b.setFixedHeight(30)
+        b.clicked.connect(dlg.close)
+        v.addWidget(b)
+        dlg.exec()
+
+    def _restore_preview(self):
+        """LOT 10A : restaure la dernière image aperçue (persistée en
+        nom de fichier, comme le marquage)."""
+        saved = self.cfg.get("last_preview_file", "")
+        if not saved:
+            return
+        g = self._grid_widget
+        for e in g.thumbs:
+            if os.path.basename(e["path"]) == saved:
+                g.sel.clear()
+                g.sel.add(e["path"])
+                g._anchor = e["path"]
+                g.update()
+                g.selection_changed.emit()
+                g._ensure_visible(g._position_of(e["path"]))
+                return
+
+    def closeEvent(self, e):
+        self._cancel = True
+        self._do_save()
+        super().closeEvent(e)
+
     # ── LOT 5 : extraction ─────────────────────────────────────
     def _start_extraction(self, retry=False):
         if getattr(self, "_extracting", False):
+            return
+        if not self._ffmpeg_ok:
+            self._status("ffmpeg absent — extraction impossible dans la version Qt.", 6000)
             return
         vp = getattr(self, "_video_path", "") or self.cfg.get("video_path", "")
         if not vp or not os.path.exists(vp):
@@ -738,12 +1221,16 @@ class MainWindow(QMainWindow):
         self._flushed = 0
         self._flush_tot = len(targets)
         self._black_tcs = []
+        self._black_btn.setEnabled(False)
+        self._extract_start = time.time()
         self._retry_recovered = 0
         self._extract_start = time.time()
         if not retry:
             self._grid_widget.clear_all()
             self._upd_badges()
             self._reset_preview()
+            self._black_paths = {}
+            shutil.rmtree(self._black_dir, ignore_errors=True)
         log.info("%s : %d frame(s) ciblée(s) — %s",
                  "Ré-extraction" if retry else "Extraction lancée",
                  len(targets), os.path.basename(vp))
@@ -754,6 +1241,7 @@ class MainWindow(QMainWindow):
             int(self._seuil.text() or 5),
             self._current_tonemap(),
             lambda: self._cancel,
+            self._black_dir,
         )
         self._worker.result_ready.connect(self._on_worker_result)
         self._worker.finished_all.connect(self._extract_done)
@@ -812,9 +1300,18 @@ class MainWindow(QMainWindow):
             pct = int(self._flushed / max(1, self._flush_tot) * 100)
             self._prog.setValue(pct)
             if k == "ok":
+                g = self._grid_widget
+                if fp and fp not in g.thumb_by_path:
+                    g.thumbs.append({"path": fp, "tc": tc})
+                    g.thumb_by_path[fp] = g.thumbs[-1]
+                    g.updateGeometry()
+                    g.update()
+                    self._badge_total.setText(f"{len(g.thumbs)} image(s)")
                 self._prog_lbl.setText(self._progress_text(self._flushed, self._flush_tot, tc))
             elif k == "black":
                 self._black_tcs.append(tc)
+                if fp:
+                    self._black_paths[tc] = fp
                 self._prog_lbl.setText(self._progress_text(self._flushed, self._flush_tot, tc, "noire"))
             else:
                 self._failed_tcs.append(tc)
@@ -867,6 +1364,7 @@ class MainWindow(QMainWindow):
                 self._prog_lbl.setText("Tous les échecs ont été récupérés")
                 self._status("Ré-extraction terminée : tous les échecs récupérés.", 6000)
             return
+        self._reload_extraction_folder()
         if self._cancel:
             self._prog_lbl.setText(f"Annulé · {ok} image(s) sauvegardée(s)")
         elif nf:
@@ -879,9 +1377,13 @@ class MainWindow(QMainWindow):
             self._prog.setValue(100)
             self._prog_lbl.setText(f"Terminé · {ok} image(s)")
             if self._black_tcs:
-                self._status(f"{len(self._black_tcs)} frame(s) noire(s) : " +
-                             " | ".join(hms(t) for t in self._black_tcs), 0)
-            self._reload_extraction_folder()
+                self._status(
+                    f"{len(self._black_tcs)} frame(s) noire(s) exclue(s) de l'extraction.",
+                    6000)
+        nb = len(self._black_tcs)
+        self._black_btn.setText(
+            f"Afficher les frames noires  ({nb})" if nb else "Afficher les frames noires")
+        self._black_btn.setEnabled(nb > 0 and not self._cancel)
 
     # ── Zone A ─────────────────────────────────────────────────
     def _build_zone_a(self, hbox):
@@ -955,7 +1457,7 @@ class MainWindow(QMainWindow):
         tmb.setSpacing(8)
         row = QHBoxLayout()
         row.setSpacing(8)
-        tm_lbl = QLabel("Tone mapping HDR→SDR :")
+        tm_lbl = QLabel("Tone mapping")
         tm_lbl.setStyleSheet(f"color: {TH.WARNING}; font-size: 12px;")
         row.addWidget(tm_lbl)
         row.addStretch()
@@ -975,8 +1477,7 @@ class MainWindow(QMainWindow):
             ab.setFixedHeight(28)
             tm_grp.addButton(ab)
             self._tm_buttons[algo] = ab
-            row.addWidget(ab)
-        row.addStretch()
+            row.addWidget(ab, 1)
         tmb.addLayout(row)
         lay.addWidget(self._tm_block)
         self._tm_block.setVisible(False)
@@ -1005,6 +1506,25 @@ class MainWindow(QMainWindow):
         self._work_btn.setFixedHeight(32)
         self._work_btn.clicked.connect(self._pick_workdir)
         lay.addWidget(self._work_btn)
+
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        self._generic_entry = QLineEdit(str(cfg.get("generic_name", "capture")))
+        self._generic_entry.setFixedHeight(28)
+        self._generic_entry.setToolTip(
+            "Nom générique des fichiers déplacés : "
+            "<nom>_0001.jpg, <nom>_0002.jpg, …")
+        row.addWidget(self._generic_entry, 1)
+        suf = QLabel("_0001.jpg")
+        suf.setStyleSheet(f"color: {TH.TEXT_MUTED}; font-size: 12px;")
+        row.addWidget(suf)
+        lay.addLayout(row)
+
+        self._move_btn = QPushButton("Déplacer sélection / marquées → travail")
+        self._move_btn.setFixedHeight(30)
+        self._move_btn.clicked.connect(self._move_to_workdir)
+        self._move_btn.setEnabled(False)
+        lay.addWidget(self._move_btn)
 
         lay.addSpacing(10)
         lay.addWidget(sep_a())
@@ -1110,6 +1630,9 @@ class MainWindow(QMainWindow):
         self._seuil = QLineEdit(str(int(cfg.get("black_threshold", 5))))
         self._seuil.setFixedWidth(44)
         self._seuil.setFixedHeight(28)
+        self._seuil.setToolTip(
+            "Seuil de noir : une image dont la luminance moyenne est sous "
+            "cette valeur est considérée noire et filtrée.")
         row.addWidget(self._seuil)
         self._lbl_255 = QLabel("/255")
         self._lbl_255.setStyleSheet(f"color: {TH.TEXT_SECOND}; font-size: 12px;")
@@ -1141,19 +1664,26 @@ class MainWindow(QMainWindow):
         self._cancel_btn.setFixedHeight(30)
         self._cancel_btn.clicked.connect(self._cancel_extraction)
         self._cancel_btn.setEnabled(False)
-        delete = QPushButton("Supprimer")
-        delete.setObjectName("danger")
-        delete.setFixedHeight(30)
-        delete.clicked.connect(lambda: self._not_yet("Suppression", "LOT 8"))
+        self._del_btn = QPushButton("Supprimer")
+        self._del_btn.setObjectName("danger")
+        self._del_btn.setFixedHeight(30)
+        self._del_btn.clicked.connect(self._delete_selected)
+        self._del_btn.setEnabled(False)
         row.addWidget(self._cancel_btn)
-        row.addWidget(delete)
+        row.addWidget(self._del_btn)
         lay.addLayout(row)
 
-        clear = QPushButton("Vider le dossier d'extraction")
-        clear.setObjectName("danger")
-        clear.setFixedHeight(30)
-        clear.clicked.connect(lambda: self._not_yet("Vider le dossier", "LOT 8"))
-        lay.addWidget(clear)
+        self._clear_btn = QPushButton("Vider le dossier d'extraction")
+        self._clear_btn.setObjectName("danger")
+        self._clear_btn.setFixedHeight(30)
+        self._clear_btn.clicked.connect(self._clear_output_dir)
+        lay.addWidget(self._clear_btn)
+
+        self._black_btn = QPushButton("Afficher les frames noires")
+        self._black_btn.setFixedHeight(30)
+        self._black_btn.clicked.connect(self._show_black_panel)
+        self._black_btn.setEnabled(False)
+        lay.addWidget(self._black_btn)
 
         self._retry_btn = QPushButton("Ré-extraire les échecs")
         self._retry_btn.setFixedHeight(30)
@@ -1172,20 +1702,23 @@ class MainWindow(QMainWindow):
         lay.addWidget(self._prog_lbl)
 
         row = QHBoxLayout()
-        sw2 = Switch()
-        sw2.setChecked(bool(cfg.get("confirm_delete", True)))
-        row.addWidget(sw2)
+        self._confirm_switch = Switch()
+        self._confirm_switch.setChecked(bool(cfg.get("confirm_delete", True)))
+        # LOT 8 (fix) : le switch pilote la confirmation en mémoire
+        # (le fichier VFE_Config.json reste inchangé jusqu'au LOT 10)
+        self._confirm_switch.toggled.connect(
+            lambda on: self.cfg.update({"confirm_delete": bool(on)}))
+        row.addWidget(self._confirm_switch)
         row.addWidget(QLabel("Demander confirmation avant suppression"))
         row.addStretch()
         lay.addLayout(row)
 
         lay.addSpacing(12)
-        save = QPushButton("Sauvegarder la configuration")
-        save.setObjectName("ghost")
-        save.setFixedHeight(32)
-        save.clicked.connect(
-            lambda: self._status("Sauvegarde désactivée pendant la migration (lecture seule)."))
-        lay.addWidget(save)
+        self._save_btn = QPushButton("Sauvegarder la configuration")
+        self._save_btn.setObjectName("ghost")
+        self._save_btn.setFixedHeight(32)
+        self._save_btn.clicked.connect(self._save_action)
+        lay.addWidget(self._save_btn)
 
         scroll.setWidget(inner)
         za.addWidget(scroll)
@@ -1239,6 +1772,8 @@ class MainWindow(QMainWindow):
         self._mark_key_entry.setFixedWidth(32)
         self._mark_key_entry.setFixedHeight(28)
         self._mark_key_entry.setAlignment(Qt.AlignCenter)
+        self._mark_key_entry.setToolTip(
+            "Touche de marquage de la sélection (1 caractère).")
         self._mark_key_entry.textChanged.connect(lambda *_: self._rebind_mark_key())
         zb.addWidget(self._mark_key_entry)
         zb.addWidget(QLabel("Vignettes :"))
@@ -1248,6 +1783,7 @@ class MainWindow(QMainWindow):
         if i >= 0:
             self._c_tsize.setCurrentIndex(i)
         self._c_tsize.setFixedHeight(28)
+        self._c_tsize.setToolTip("Taille des vignettes — gouverne la grille.")
         zb.addWidget(self._c_tsize)
         zb.addWidget(QLabel("Colonnes :"))
         self._c_cols = QComboBox()
@@ -1256,6 +1792,7 @@ class MainWindow(QMainWindow):
         if i >= 0:
             self._c_cols.setCurrentIndex(i)
         self._c_cols.setFixedHeight(28)
+        self._c_cols.setToolTip("Nombre de colonnes — gouverne la grille.")
         zb.addWidget(self._c_cols)
         refresh = QPushButton("Rafraîchir")
         refresh.setObjectName("ghost")
@@ -1333,8 +1870,10 @@ class MainWindow(QMainWindow):
         if i >= 0:
             self._c_psize.setCurrentIndex(i)
         self._c_psize.setFixedHeight(28)
+        self._c_psize.setToolTip("Largeur de l'aperçu — gouverne la colonne de droite.")
         row.addWidget(self._c_psize)
-        self._c_psize.currentIndexChanged.connect(lambda *_: self._reshow_preview())
+        self._c_psize.currentIndexChanged.connect(
+            lambda *_: QTimer.singleShot(0, self._reshow_preview))
         row.addStretch()
         zd.addLayout(row)
 
@@ -1349,6 +1888,11 @@ class MainWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     app.setStyleSheet(QSS)
+    icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "app_icon.png")
+    if os.path.exists(icon_path):
+        from PySide6.QtGui import QIcon
+        app.setWindowIcon(QIcon(icon_path))
     win = MainWindow()
     win.show()
     sys.exit(app.exec())

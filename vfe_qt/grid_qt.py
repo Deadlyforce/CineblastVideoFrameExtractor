@@ -50,6 +50,7 @@ class ThumbCanvas(QWidget):
         self._shift = False
         self._anchor = None
         self._hover = None
+        self.empty_message = "Aucune image extraite."
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMouseTracking(True)
 
@@ -99,6 +100,11 @@ class ThumbCanvas(QWidget):
         self.updateGeometry()
         self.update()
         self.selection_changed.emit()
+
+    def set_empty_message(self, text):
+        """LOT 9A : message d'état vide contextuel."""
+        self.empty_message = text
+        self.update()
 
     # ── géométrie ──────────────────────────────────────────────
     def _rows(self):
@@ -165,7 +171,7 @@ class ThumbCanvas(QWidget):
             p.setFont(f)
             p.setPen(QColor(TH.TEXT_MUTED))
             p.drawText(QRectF(self.rect()), Qt.AlignmentFlag.AlignCenter,
-                       "Aucune image extraite.")
+                       self.empty_message)
             p.end()
             return
         vis = e.rect()
@@ -178,8 +184,10 @@ class ThumbCanvas(QWidget):
                     break
                 self._draw_cell(p, idx)
         if self._rubber is not None:
+            fill = QColor(TH.ACCENT)
+            fill.setAlpha(90)  # ~35 % d'opacité
             p.setPen(QPen(QColor(TH.ACCENT), 2, Qt.PenStyle.DashLine))
-            p.setBrush(QBrush(QColor(TH.ACCENT_SUBTLE)))
+            p.setBrush(QBrush(fill))
             p.drawRect(self._rubber)
         p.end()
 

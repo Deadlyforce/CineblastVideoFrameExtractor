@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 
 from theme import (
     ACCENT,
+    ACCENT_BORDER,
     BORDER_SUBTLE,
     INPUT_BG,
     ON_ACCENT,
@@ -50,6 +51,11 @@ class Switch(QAbstractButton):
         p.setPen(Qt.NoPen)
         p.setBrush(QColor(TEXT_PRIMARY))
         p.drawEllipse(x, y, d, d)
+        if self.hasFocus():
+            p.setPen(QPen(QColor(ACCENT_BORDER), 1))
+            p.setBrush(Qt.NoBrush)
+            p.drawRoundedRect(QRectF(0.5, 0.5, self.width() - 2, self.height() - 2),
+                              10, 10)
         p.end()
 
 

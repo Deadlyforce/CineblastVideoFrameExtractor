@@ -83,6 +83,11 @@ QPushButton#ghost:hover {{
     border-color: {BORDER_STRONG};
 }}
 QPushButton#ghost:pressed {{ background-color: {SURFACE_CARD}; }}
+QPushButton:focus {{ border-color: {ACCENT_BORDER}; }}
+QPushButton#primary:focus {{ border: none; }}
+QPushButton#seg {{ color: {TEXT_MUTED}; }}
+QPushButton#seg:hover {{ border-color: {BORDER_STRONG}; }}
+QComboBox:focus {{ border-color: {ACCENT_BORDER}; }}
 
 QPushButton#seg:checked {{
     background-color: {ACCENT_SUBTLE};

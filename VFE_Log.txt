@@ -22,3 +22,142 @@
 2026-09-02 20:11:52  INFO     [Qt] Grille rechargée : 22 image(s)
 2026-09-02 21:25:43  INFO     [Qt] Grille rechargée : 0 image(s)
 2026-09-02 21:26:02  INFO     [Qt] Grille rechargée : 22 image(s)
+2026-09-02 21:44:48  INFO     [Qt] Grille rechargée : 0 image(s)
+2026-09-02 21:45:00  INFO     [Qt] Grille rechargée : 22 image(s)
+2026-09-02 21:45:29  INFO     [Qt] Déplacement : 2/2 image(s) → C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/2026-09-01 Evil Dead Burn/photos
+2026-09-02 21:46:16  INFO     [Qt] Suppression : 1 image(s) → corbeille
+2026-09-02 21:46:27  INFO     [Qt] Suppression : 1 image(s) → corbeille
+2026-09-02 21:46:39  INFO     [Qt] Suppression : 1 image(s) → corbeille
+2026-09-02 21:46:44  INFO     [Qt] Suppression : 1 image(s) → corbeille
+2026-09-02 21:46:52  INFO     [Qt] Suppression : 2 image(s) → corbeille
+2026-09-02 21:47:39  INFO     [Qt] Déplacement : 2/2 image(s) → C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/2026-09-01 Evil Dead Burn/photos
+2026-09-02 21:48:22  INFO     [Qt] Déplacement : 2/2 image(s) → C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/2026-09-01 Evil Dead Burn/photos
+2026-09-02 21:48:50  INFO     [Qt] Vider le dossier : 10 fichier(s) → corbeille
+2026-09-02 21:49:19  INFO     [Qt] Extraction lancée : 55 frame(s) ciblée(s) — Colony.2026.1080p.WEB-DL.AAC2.0.H264-7fans.mkv
+2026-09-02 21:49:21  INFO     [Qt] Extraction terminée : 53 image(s), 2 noire(s) filtrée(s), 0 échec(s)
+2026-09-02 21:49:21  INFO     [Qt] Grille rechargée : 53 image(s)
+2026-09-02 21:49:32  INFO     [Qt] Suppression : 1 image(s) → corbeille
+2026-09-02 21:49:36  INFO     [Qt] Suppression : 2 image(s) → corbeille
+2026-09-02 21:49:43  INFO     [Qt] Suppression : 1 image(s) → corbeille
+2026-09-02 21:50:13  INFO     [Qt] Grille rechargée : 49 image(s)
+2026-09-02 21:51:27  INFO     [Qt] Suppression : 1 image(s) → corbeille
+2026-09-02 21:52:18  INFO     [Qt] Grille rechargée : 0 image(s)
+2026-09-02 21:52:33  INFO     [Qt] Grille rechargée : 48 image(s)
+2026-09-02 21:52:53  INFO     [Qt] Suppression : 1 image(s) → corbeille
+2026-09-02 21:52:55  INFO     [Qt] Suppression : 1 image(s) → corbeille
+2026-09-02 22:08:00  INFO     [Qt] Grille rechargée : 0 image(s)
+2026-09-02 22:21:59  INFO     [Qt] Grille rechargée : 0 image(s)
+2026-09-02 22:22:07  INFO     [Qt] Grille rechargée : 46 image(s)
+2026-09-02 22:23:09  INFO     [Qt] Vider le dossier : 46 fichier(s) → corbeille
+2026-09-03 09:44:57  INFO     [Qt] Grille rechargée : 0 image(s)
+2026-09-03 09:45:43  INFO     [Qt] Grille rechargée : 0 image(s)
+2026-09-03 10:06:18  INFO     [Qt] Grille rechargée : 0 image(s)
+2026-09-03 10:07:06  INFO     [Qt] Extraction lancée : 30 frame(s) ciblée(s) — Black Emanuelle (1975) - VF - Bitto Albertini.mkv
+2026-09-03 10:07:06  INFO     [Qt] Extraction terminée : 28 image(s), 2 noire(s) filtrée(s), 0 échec(s)
+2026-09-03 10:07:06  INFO     [Qt] Grille rechargée : 28 image(s)
+2026-09-03 10:07:37  INFO     [Qt] Grille rechargée : 28 image(s)
+2026-09-03 10:08:27  INFO     [Qt] Grille rechargée : 28 image(s)
+2026-09-03 10:08:43  ERROR    [Qt] Exception non gérée :
+Traceback (most recent call last):
+  File "C:\Users\norma\Desktop\Cineblast VFE\vfe_qt\widgets.py", line 54, in paintEvent
+    p.setPen(QPen(QColor(ACCENT_BORDER), 1))
+                         ^^^^^^^^^^^^^
+NameError: name 'ACCENT_BORDER' is not defined
+
+2026-09-03 10:08:43  ERROR    [Qt] Exception non gérée :
+Traceback (most recent call last):
+  File "C:\Users\norma\Desktop\Cineblast VFE\vfe_qt\widgets.py", line 54, in paintEvent
+    p.setPen(QPen(QColor(ACCENT_BORDER), 1))
+                         ^^^^^^^^^^^^^
+NameError: name 'ACCENT_BORDER' is not defined
+
+2026-09-03 10:08:43  ERROR    [Qt] Exception non gérée :
+Traceback (most recent call last):
+  File "C:\Users\norma\Desktop\Cineblast VFE\vfe_qt\widgets.py", line 54, in paintEvent
+    p.setPen(QPen(QColor(ACCENT_BORDER), 1))
+                         ^^^^^^^^^^^^^
+NameError: name 'ACCENT_BORDER' is not defined
+
+2026-09-03 10:09:24  INFO     [Qt] Grille rechargée : 28 image(s)
+2026-09-03 10:13:57  INFO     [Qt] Grille rechargée : 28 image(s)
+2026-09-03 10:29:50  INFO     [Qt] Grille rechargée : 28 image(s)
+2026-09-03 10:29:58  INFO     [Qt] Grille rechargée : 28 image(s)
+2026-09-03 10:30:22  INFO     [Qt] Vider le dossier : 28 fichier(s) → corbeille
+2026-09-03 10:30:34  INFO     [Qt] Extraction lancée : 150 frame(s) ciblée(s) — Evil Dead Burn (2026).mkv
+2026-09-03 10:31:12  INFO     [Qt] Extraction terminée : 144 image(s), 6 noire(s) filtrée(s), 0 échec(s)
+2026-09-03 10:31:12  INFO     [Qt] Grille rechargée : 144 image(s)
+2026-09-03 10:31:51  INFO     [Qt] Vider le dossier : 144 fichier(s) → corbeille
+2026-09-03 12:52:55  INFO     [Qt] Grille rechargée : 0 image(s)
+2026-09-03 12:54:15  INFO     [Qt] Extraction lancée : 75 frame(s) ciblée(s) — Evil Dead Burn (2026).mkv
+2026-09-03 12:54:36  INFO     [Qt] Extraction terminée : 71 image(s), 4 noire(s) filtrée(s), 0 échec(s)
+2026-09-03 12:54:36  INFO     [Qt] Grille rechargée : 71 image(s)
+2026-09-03 13:02:09  INFO     [Qt] Grille rechargée : 71 image(s)
+2026-09-03 13:03:08  INFO     [Qt] Grille rechargée : 71 image(s)
+2026-09-03 13:03:09  INFO     [Qt] Grille rechargée : 71 image(s)
+2026-09-03 13:03:10  INFO     [Qt] Grille rechargée : 71 image(s)
+2026-09-03 13:10:04  INFO     [Qt] Vider le dossier : 71 fichier(s) → corbeille
+2026-09-03 13:10:13  INFO     [Qt] Extraction lancée : 75 frame(s) ciblée(s) — Black Emanuelle (1975) - VF - Bitto Albertini.mkv
+2026-09-03 13:10:15  INFO     [Qt] Extraction terminée : 73 image(s), 2 noire(s) filtrée(s), 0 échec(s)
+2026-09-03 13:10:15  INFO     [Qt] Grille rechargée : 73 image(s)
+2026-09-03 13:12:53  INFO     [Qt] Vider le dossier : 73 fichier(s) → corbeille
+2026-09-03 13:13:04  INFO     [Qt] Extraction lancée : 60 frame(s) ciblée(s) — Evil Dead Burn (2026).mkv
+2026-09-03 13:13:19  INFO     [Qt] Extraction terminée : 57 image(s), 3 noire(s) filtrée(s), 0 échec(s)
+2026-09-03 13:13:19  INFO     [Qt] Grille rechargée : 57 image(s)
+2026-09-03 13:13:47  INFO     [Qt] Vider le dossier : 56 fichier(s) → corbeille
+2026-09-03 13:13:54  INFO     [Qt] Extraction lancée : 60 frame(s) ciblée(s) — Evil Dead Burn (2026).mkv
+2026-09-03 13:14:10  INFO     [Qt] Extraction terminée : 57 image(s), 3 noire(s) filtrée(s), 0 échec(s)
+2026-09-03 13:14:10  INFO     [Qt] Grille rechargée : 57 image(s)
+2026-09-03 13:15:18  INFO     [Qt] Vider le dossier : 56 fichier(s) → corbeille
+2026-09-03 13:17:17  INFO     [Qt] Extraction lancée : 60 frame(s) ciblée(s) — Evil Dead Burn (2026).mkv
+2026-09-03 13:17:33  INFO     [Qt] Extraction terminée : 57 image(s), 3 noire(s) filtrée(s), 0 échec(s)
+2026-09-03 13:17:33  INFO     [Qt] Grille rechargée : 57 image(s)
+2026-09-03 13:17:49  INFO     [Qt] Vider le dossier : 57 fichier(s) → corbeille
+2026-09-03 13:17:54  INFO     [Qt] Extraction lancée : 200 frame(s) ciblée(s) — Evil Dead Burn (2026).mkv
+2026-09-03 13:18:45  INFO     [Qt] Extraction terminée : 194 image(s), 6 noire(s) filtrée(s), 0 échec(s)
+2026-09-03 13:18:45  INFO     [Qt] Grille rechargée : 194 image(s)
+2026-09-03 13:19:07  INFO     [Qt] Vider le dossier : 194 fichier(s) → corbeille
+2026-09-03 13:19:19  INFO     [Qt] Extraction lancée : 135 frame(s) ciblée(s) — Evil Dead Burn (2026).mkv
+2026-09-03 13:19:54  INFO     [Qt] Extraction terminée : 126 image(s), 9 noire(s) filtrée(s), 0 échec(s)
+2026-09-03 13:19:54  INFO     [Qt] Grille rechargée : 126 image(s)
+2026-09-03 13:24:58  INFO     [Qt] Déplacement : 4/4 image(s) → C:/Users/norma/Videos/DaVinci Resolve Projects/Cineblast/2026-09-01 Evil Dead Burn/photos
+2026-09-03 13:25:46  INFO     [Qt] Vider le dossier : 122 fichier(s) → corbeille
+2026-09-03 13:29:44  INFO     [Qt] Extraction lancée : 500 frame(s) ciblée(s) — Evil Dead Burn (2026).mkv
+2026-09-03 13:31:53  INFO     [Qt] Extraction terminée : 481 image(s), 19 noire(s) filtrée(s), 0 échec(s)
+2026-09-03 13:31:53  INFO     [Qt] Grille rechargée : 481 image(s)
+2026-09-03 18:13:58  INFO     [Qt] Grille rechargée : 481 image(s)
+2026-09-03 18:14:34  INFO     [Qt] Grille rechargée : 0 image(s)
+2026-09-03 18:15:02  INFO     [Qt] Extraction lancée : 200 frame(s) ciblée(s) — Evil Dead Burn (2026).mkv
+2026-09-03 18:15:54  INFO     [Qt] Extraction terminée : 192 image(s), 8 noire(s) filtrée(s), 0 échec(s)
+2026-09-03 18:15:54  INFO     [Qt] Grille rechargée : 192 image(s)
+2026-09-03 18:18:04  INFO     [Qt] Vider le dossier : 192 fichier(s) → corbeille
+2026-09-03 18:20:28  INFO     [Qt] Extraction lancée : 140 frame(s) ciblée(s) — Evil Dead Burn (2026).mkv
+2026-09-03 18:21:04  INFO     [Qt] Extraction terminée : 133 image(s), 7 noire(s) filtrée(s), 0 échec(s)
+2026-09-03 18:21:04  INFO     [Qt] Grille rechargée : 133 image(s)
+2026-09-03 18:22:00  INFO     [Qt] Vider le dossier : 133 fichier(s) → corbeille
+2026-09-03 18:54:12  ERROR    [Qt] Exception non gérée :
+Traceback (most recent call last):
+  File "C:\Users\norma\Desktop\Cineblast VFE\vfe_qt\main.py", line 75, in <module>
+    class BlackThumb(QLabel):
+                     ^^^^^^
+NameError: name 'QLabel' is not defined
+
+2026-09-03 19:18:58  INFO     [Qt] Grille rechargée : 0 image(s)
+2026-09-03 19:19:05  INFO     [Qt] Extraction lancée : 140 frame(s) ciblée(s) — Evil Dead Burn (2026).mkv
+2026-09-03 19:19:42  INFO     [Qt] Extraction terminée : 133 image(s), 7 noire(s) filtrée(s), 0 échec(s)
+2026-09-03 19:19:42  INFO     [Qt] Grille rechargée : 133 image(s)
+2026-09-03 19:29:36  INFO     [Qt] Grille rechargée : 133 image(s)
+2026-09-03 19:29:38  INFO     [Qt] Grille rechargée : 133 image(s)
+2026-09-03 19:29:48  INFO     [Qt] Vider le dossier : 133 fichier(s) → corbeille
+2026-09-03 19:29:58  INFO     [Qt] Extraction lancée : 140 frame(s) ciblée(s) — Evil Dead Burn (2026).mkv
+2026-09-03 19:30:34  INFO     [Qt] Extraction terminée : 133 image(s), 7 noire(s) filtrée(s), 0 échec(s)
+2026-09-03 19:30:34  INFO     [Qt] Grille rechargée : 133 image(s)
+2026-09-03 19:31:15  INFO     [Qt] Vider le dossier : 133 fichier(s) → corbeille
+2026-09-03 19:36:10  INFO     [Qt] Grille rechargée : 0 image(s)
+2026-09-03 19:36:13  INFO     [Qt] Extraction lancée : 140 frame(s) ciblée(s) — Evil Dead Burn (2026).mkv
+2026-09-03 19:36:49  INFO     [Qt] Extraction terminée : 133 image(s), 7 noire(s) filtrée(s), 0 échec(s)
+2026-09-03 19:36:49  INFO     [Qt] Grille rechargée : 133 image(s)
+2026-09-03 19:37:35  INFO     [Qt] Grille rechargée : 133 image(s)
+2026-09-03 19:37:42  INFO     [Qt] Grille rechargée : 133 image(s)
+2026-09-03 19:38:04  INFO     [Qt] Vider le dossier : 133 fichier(s) → corbeille
+2026-09-03 19:45:27  INFO     [Qt] Grille rechargée : 0 image(s)
+2026-09-03 19:45:35  INFO     [Qt] Grille rechargée : 0 image(s)
