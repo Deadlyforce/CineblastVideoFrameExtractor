@@ -27,7 +27,10 @@ log = logging.getLogger("vfe.qt")
 import faulthandler
 import traceback
 
-faulthandler.enable()
+try:
+    faulthandler.enable()
+except Exception:
+    pass  # pythonw : sys.stderr absent, faulthandler indisponible
 
 def _qt_excepthook(exc_type, exc_value, exc_tb):
     msg = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
