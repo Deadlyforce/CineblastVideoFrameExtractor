@@ -9,6 +9,14 @@ import time as _time
 
 log = logging.getLogger("vfe")
 
+# ── Windows : empêche les fenêtres console ffmpeg / ffprobe ──────────────────
+# Chaque subprocess ouvre une fenêtre console sous Windows quand le parent
+# n'a pas de console attachée. CREATE_NO_WINDOW supprime cette création,
+# sans aucun effet sur les autres OS.
+_SUBPROC_KW = {}
+if os.name == "nt":
+    _SUBPROC_KW["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+
 # ── Détection HDR ────────────────────────────────────────────────────────────
 HDR_TRANSFERS   = {"smpte2084", "arib-std-b67", "smpte428", "bt2020-10", "bt2020-12"}
 HDR_PRIMARIES   = {"bt2020"}
@@ -17,7 +25,8 @@ HDR_COLORSPACES = {"bt2020nc", "bt2020c", "smpte2085", "ictcp"}
 
 def ffmpeg_available():
     try:
-        r = subprocess.run(["ffmpeg", "-version"], capture_output=True, timeout=5)
+        r = subprocess.run(["ffmpeg", "-version"], capture_output=True, timeout=5,
+                           **_SUBPROC_KW)
         return r.returncode == 0
     except Exception:
         return False
@@ -31,7 +40,8 @@ def get_display_size(path, raw_w, raw_h):
             "-show_entries", "stream=width,height,sample_aspect_ratio,display_aspect_ratio",
             "-of", "csv=p=0", path
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10,
+                                **_SUBPROC_KW)
         if result.returncode == 0:
             parts = result.stdout.strip().split(",")
             if len(parts) >= 4:
@@ -57,7 +67,8 @@ def detect_hdr(vpath):
             "-of", "json",
             vpath
         ]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=15,
+                           **_SUBPROC_KW)
         if r.returncode == 0:
             data = json.loads(r.stdout)
             streams = data.get("streams", [{}])
@@ -86,7 +97,8 @@ def detect_hdr(vpath):
 def zscale_available():
     """Vérifie que le build ffmpeg inclut libzimg (nécessaire pour zscale)."""
     try:
-        r = subprocess.run(["ffmpeg", "-filters"], capture_output=True, text=True, timeout=10)
+        r = subprocess.run(["ffmpeg", "-filters"], capture_output=True, text=True,
+                           timeout=10, **_SUBPROC_KW)
         return "zscale" in r.stdout
     except Exception as ex:
         log.debug("zscale_available : %s", ex)
@@ -174,7 +186,8 @@ def run_ffmpeg(cmd, timeout, is_cancelled):
     La raison est la queue filtrée du stderr de ffmpeg."""
     err_fd, err_path = tempfile.mkstemp(suffix=".txt", prefix="vfe_err_")
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=err_fd)
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=err_fd,
+                                **_SUBPROC_KW)
     except Exception as ex:
         os.close(err_fd)
         try: os.remove(err_path)
