@@ -81,7 +81,7 @@ dropped into reviews.
 3. **Get the code**:
 
    ```powershell
-   git clone https://github.com/<your-username>/cineblast-vfe.git
+   git clone https://github.com/Deadlyforce/CineblastVideoFrameExtractor.git
    cd cineblast-vfe
    ```
 
