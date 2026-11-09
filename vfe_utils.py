@@ -2,7 +2,6 @@
 Aucune dépendance tkinter ici."""
 import os
 import re
-import numpy as np
 
 
 def hms(s):
@@ -44,8 +43,14 @@ def frame_filename(base, num, t_sec):
     return f"{base}_{num:04d}_{tc_str(t_sec)}.jpg"
 
 
-def is_black_frame(arr_rgb, threshold=5):
-    """Détecte une frame noire depuis un array RGB numpy."""
-    sample = arr_rgb[::8, ::8]
-    lum = 0.299 * sample[:, :, 0] + 0.587 * sample[:, :, 1] + 0.114 * sample[:, :, 2]
-    return float(lum.mean()) < threshold
+def is_black_frame(img, threshold=5):
+    """Détecte une frame noire depuis une image PIL (RGB).
+    Conversion en niveaux de gris (coefficients ITU-R 601 identiques),
+    sous-échantillonnage 1/8, comparaison de la luminance moyenne au seuil."""
+    w, h = img.size
+    sample_w = max(1, w // 8)
+    sample_h = max(1, h // 8)
+    small = img.convert('L').resize((sample_w, sample_h))
+    pixels = list(small.getdata())
+    avg = sum(pixels) / len(pixels)
+    return avg < threshold

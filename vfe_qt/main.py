@@ -192,18 +192,18 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-import cv2
+import json
 import shutil
+import subprocess
 import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-
 from PIL import Image
-import numpy as np
 
 from vfe_config import load_config, save_config
 from vfe_ffmpeg import (
+    _SUBPROC_KW,
     build_ffmpeg_cmd,
     build_ffmpeg_cmd_fallback,
     build_ffmpeg_cmd_hdr,
@@ -364,7 +364,7 @@ class ExtractWorker(QThread):
                 pass
             self.result_ready.emit(i, "fail", "", f"décodage image : {ex}", t)
             return
-        if self._do_filter and is_black_frame(np.array(img), threshold=self._black_thresh):
+        if self._do_filter and is_black_frame(img, threshold=self._black_thresh):
             bpath = ""
             try:
                 os.makedirs(self._black_dir, exist_ok=True)
@@ -592,23 +592,80 @@ class MainWindow(QMainWindow):
             self._status(f"Vidéo chargée : {os.path.basename(p)}", 4000)
 
     def _load_video_info(self, path):
-        cap = cv2.VideoCapture(path)
-        if not cap.isOpened():
+        # ffprobe remplace cv2.VideoCapture pour la lecture des métadonnées
+        try:
+            cmd = [
+                "ffprobe", "-v", "error",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=width,height,r_frame_rate,nb_frames",
+                "-show_entries", "format=duration",
+                "-of", "json", path
+            ]
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=15,
+                               **_SUBPROC_KW)
+            if r.returncode != 0:
+                raise RuntimeError(r.stderr.strip())
+            data = json.loads(r.stdout)
+        except Exception as ex:
+            log.warning("ffprobe en échec sur %s : %s", os.path.basename(path), ex)
             self._info_lbl.setText("Fichier invalide")
             self._status("Impossible d'ouvrir la vidéo.")
             return
+
+        streams = data.get("streams", [])
+        if not streams:
+            self._info_lbl.setText("Fichier invalide")
+            self._status("Aucun flux vidéo détecté.")
+            return
+
+        s = streams[0]
+        raw_w = int(s.get("width", 0))
+        raw_h = int(s.get("height", 0))
+
+        # fps depuis r_frame_rate (format "24000/1001")
+        fps = 25.0
+        rfr = s.get("r_frame_rate", "")
+        if "/" in rfr:
+            num, den = rfr.split("/")
+            if int(den) > 0:
+                fps = int(num) / int(den)
+        elif rfr:
+            try:
+                fps = float(rfr)
+            except ValueError:
+                pass
+
+        # durée depuis format (plus fiable que stream)
+        dur = 0.0
+        fmt = data.get("format", {})
+        try:
+            dur = float(fmt.get("duration", 0))
+        except (ValueError, TypeError):
+            pass
+
+        # nombre de frames : nb_frames si dispo, sinon durée × fps
+        fc = 0
+        nb = s.get("nb_frames", "")
+        if nb and nb != "N/A":
+            try:
+                fc = int(nb)
+            except ValueError:
+                fc = 0
+        if fc <= 0 and dur > 0 and fps > 0:
+            fc = int(dur * fps)
+
+        if raw_w <= 0 or raw_h <= 0 or dur <= 0:
+            self._info_lbl.setText("Fichier invalide")
+            self._status("Métadonnées vidéo incomplètes.")
+            return
+
         self._video_path = path
         # les échecs appartiennent à l'ancienne vidéo → on les oublie
         self._failed_frames = []
         self._failed_tcs = []
         self._retry_btn.setEnabled(False)
         self._retry_btn.setText("Ré-extraire les échecs")
-        fps = cap.get(cv2.CAP_PROP_FPS) or 25
-        fc = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-        raw_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        raw_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        dur = fc / fps
-        cap.release()
+
         disp_w, disp_h = get_display_size(path, raw_w, raw_h)
         sar_applied = (disp_w != raw_w)
         self.video_info = {
